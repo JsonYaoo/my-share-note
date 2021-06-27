@@ -215,6 +215,50 @@ public interface ConcurrentMap<K, V> extends Map<K, V> {
   - ConcurrentHashMap（java.util.concurrent）
   - ConcurrentSkipListMap（java.util.concurrent）
 
+#### ConcurrentNavigableMap接口
+
+- **特点**：
+  - ConcurrentNavigableMap接口，支持 {@link NavigableMap} 操作，并且可递归地用于其navigable子视图。
+
+```java
+public interface ConcurrentNavigableMap<K,V> extends ConcurrentMap<K,V>, NavigableMap<K,V>
+{
+	// 返回Map的中间视图：键从fromKey（不含）到toKey（不含）的部分视图，fromInclusive为true代表包含fromKey，toInclusive为true代表包含toKey
+    ConcurrentNavigableMap<K,V> subMap(K fromKey, boolean fromInclusive,
+                                       K toKey,   boolean toInclusive);
+    
+    // 返回Map的头部视图：即键小于toKey(不含)的部分视图，inclusive为true代表包含toKey
+    ConcurrentNavigableMap<K,V> headMap(K toKey, boolean inclusive);
+    
+    // 返回Map的尾部视图：即键大于fromKey（不含）的部分视图，inclusive为true代表包含fromKey
+    ConcurrentNavigableMap<K,V> tailMap(K fromKey, boolean inclusive);
+    
+    // 返回Map的中间视图：即键从fromKey（fromInclusive含）到toKey（!toInclusive不含）的部分视图，两者相等时返回null(除非fromInclusive与toInclusive都为true)
+    ConcurrentNavigableMap<K,V> subMap(K fromKey, K toKey);
+    
+    // 返回Map的头部视图：即键小于toKey(!inclusive不含)的部分视图
+    ConcurrentNavigableMap<K,V> headMap(K toKey);
+    
+    // 返回Map的尾部视图：即键大于或者等于fromKey（inclusive含）的部分视图
+    ConcurrentNavigableMap<K,V> tailMap(K fromKey);
+    
+    // 返回Map的逆序（降序）视图
+    ConcurrentNavigableMap<K,V> descendingMap();
+    
+    // 返回键的升序{@link NavigableSet}视图
+    public NavigableSet<K> navigableKeySet();
+    
+    // SortedMap接口，返回键的升序视图
+    NavigableSet<K> keySet();
+    
+    // 返回Map的键的逆序{@link NavigableSet}视图 
+    public NavigableSet<K> descendingKeySet();
+}
+```
+
+- **典型实现**：
+  - ConcurrentSkipListMap（java.util.concurrent）
+
 #### HashMap
 
 ![1622377026032](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1622377026032.png)
@@ -3243,7 +3287,7 @@ public Map.Entry<K,V> pollLastEntry() {
 }
 ```
 
-###### 导航视图抽象类
+###### NavigableSubMap抽象类
 
 ```java
 // TreeMap#NavigableSubMap，导航视图抽象类
@@ -6940,6 +6984,1534 @@ final Node<K,V> find(int h, Object k) {
 
     // 如果确实找不到则返回null
     return null;
+}
+```
+
+#### ConcurrentSkipListMap
+
+![1624537265896](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1624537265896.png)
+
+##### 特点
+
+- ConcurrentSkipListMap，扩展的并发{@link ConcurrentNavigableMap} 实现，**其键是有序的**，默认按照对键进行自然排序，或者根据Map创建时提供的{@link Comparator} 进行排序，具体取决于使用的构造函数。**不允许使用 {@code null} 键或值**，因为无法可靠地区分某些 null 返回值与元素的缺失。
+- 相比Collections.synchronizedMap（**TreeMap**），ConcurrentSkipListMap同样也是线程安全的键有序的Map，但ConcurrentSkipListMap支持更高的并发。
+- ConcurrentSkipListMap，实现了**SkipLists的并发变体**，为 {@code containsKey}、{@code get}、{@code put} 和 {@code remove} 操作及其变体提供预期的平均 **log(n)** 时间成本。插入、移除、更新和访问操作由多个**线程安全**地并发执行。
+- ConcurrentSkipListMap，**迭代器和拆分器是弱一致的**，而升序键有序视图及其迭代器会比降序的更快。映射生成时的快照包含所有的 {@code Map.Entry} ，不支持 {@code Entry.setValue} 方法。
+- ConcurrentSkipListMap，与大多数集合不同，**{@code size} 方法不是恒定时间O（n）操作**，因为映射的异步性质，确定当前元素数量需要遍历元素，因此如果在遍历期间修改此集合，则可能会报告不准确的结果。
+- 此外，**批量操作** {@code putAll}、{@code equals}、{@code toArray}、{@code containsValue} 和 {@code clear} **并不能保证以原子方式执行**。例如，与 {@code putAll} 操作并发运行的迭代器可能仅查看一些添加的元素。
+
+##### 构造方法
+
+- **无参构造函数**：创建一个空的排序映射，根据其键的自然顺序排序。
+- **指定{@code Comparator} 的构造函数**：创建一个空的排序映射，根据指定的比较器排序。
+- **指定复制集合的构造函数**：O（n*logn），创建一个新映射（更新所有元素为传入集合的元素），其键值映射
+  与其参数相同，根据键的自然顺序排序。
+- **指定 {@code SortedMap} 复制集合的构造函数**：O（n），创建一个新的排序映射（即更新所有元素为传入集合的元素），其键值映射和排序与输入排序映射相同。
+
+```java
+public class ConcurrentSkipListMap<K,V> extends AbstractMap<K,V> implements ConcurrentNavigableMap<K,V>, Cloneable, Serializable {
+    
+    private static final Object BASE_HEADER = new Object();// 基础Level头结点的特殊值
+    private transient volatile HeadIndex<K,V> head;// CAS => headOffset
+    final Comparator<? super K> comparator;
+    private static final int EQ = 1;
+    private static final int LT = 2;
+    private static final int GT = 0;
+
+    // 数据结点
+    static final class Node<K,V> {
+        final K key;
+        volatile Object value;
+        volatile Node<K,V> next;
+        
+        // 创建一个新的常规节点
+        Node(K key, Object value, Node<K,V> next) {
+            this.key = key;
+            this.value = value;
+            this.next = next;
+        }
+        
+        // 创建一个新的标记节点，标记的区别在于其value字段指向自身
+        Node(Node<K,V> next) {
+            this.key = null;
+            this.value = this;
+            this.next = next;
+        }
+    }
+    
+    // 索引结点
+    static class Index<K,V> {
+        final Node<K,V> node;
+        final Index<K,V> down;
+        volatile Index<K,V> right;
+        
+        // 创建具有给定值的索引节点
+        Index(Node<K,V> node, Index<K,V> down, Index<K,V> right) {
+            this.node = node;
+            this.down = down;
+            this.right = right;
+        }
+    }
+    
+    // 带level的索引头结点
+    static final class HeadIndex<K,V> extends Index<K,V> {
+        final int level;
+        HeadIndex(Node<K,V> node, Index<K,V> down, Index<K,V> right, int level) {
+            super(node, down, right);
+            this.level = level;
+        }
+    }
+    
+    // 创建一个空的排序映射，根据其键的自然顺序排序
+    public ConcurrentSkipListMap() {
+        this.comparator = null;
+        initialize();// 初始化或重置跳跃表状态
+    }
+    
+    // 创建一个空的排序映射，根据指定的比较器排序
+    public ConcurrentSkipListMap(Comparator<? super K> comparator) {
+        this.comparator = comparator;
+        initialize();// 初始化或重置跳跃表状态
+    }
+    
+    // O（n*logn），创建一个新映射（更新所有元素为传入集合的元素），其键值映射与其参数相同，根据键的自然顺序排序
+    public ConcurrentSkipListMap(Map<? extends K, ? extends V> m) {
+        this.comparator = null;
+        initialize();// 初始化或重置跳跃表状态
+        putAll(m);
+    }
+    
+    // O（n），创建一个新的排序映射（即更新所有元素为传入集合的元素），其键值映射和排序与输入排序映射相同
+    public ConcurrentSkipListMap(SortedMap<K, ? extends V> m) {
+        this.comparator = m.comparator();
+        initialize();// 初始化或重置跳跃表状态
+        buildFromSorted(m);
+    }
+    
+    // 初始化或重置跳跃表状态，会被构造函数、clone、clear、readObject调用，注意比较器必须单独初始
+    private void initialize() {
+        keySet = null;
+        entrySet = null;
+        values = null;
+        descendingMap = null;
+
+        // 创建level为1的索引结点, 指向新创建的BASE_HEADER数据头结点
+        // HeadIndex: { node: [Node: {key: null, value: BASE_HEADER, next: null}], down: null, right: null, level: 1 }
+        head = new HeadIndex<K,V>(
+                new Node<K,V>(null, BASE_HEADER, null),
+                null, null, 1
+        );
+    }
+}
+```
+
+##### SkipList跳表性质
+
+- 跳表由**多层链表**组成：
+  - 一层数据层，多层索引层，**head指针指向最高层的索引头结点**。
+  - 数据结点含有3个指针，key指针指向Key对象，value指针指向Value对象，next指针指向下一个数据结点。
+  - 索引结点含有3个指针，node指针指向level 0的数据结点，down指针指向level-1的索引结点，right指针指向相同level的索引结点。
+  - 其中level是通过一定的概率随机产生的（**索引层级越高，出现的概率越低**，level 1: 50%, level 2: 25%, level 3: 12.5%...）。
+- 每一层都是一个**有序链表**，默认为自然排序，也可以指定Comparator排序。
+- level 0为**数据层**，数据层含有所有元素。level 0以上都为**索引层**，索引层的结点随机选取。
+- 高级别索引的元素集是低级别索引元素集的一个子集，索引的元素集又是数据的元素集的一个子集，即**level 0是任何level的一个并集**。
+
+![1624546428005](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1624546428005.png)
+
+##### 顺序Map构建SkipList
+
+- **buildFromSorted（SortedMap）**：
+  - 根据顺序Map重新建立跳表，head指针设置为最高层的索引头结点。
+  - 索引层级越高，出现的概率越低：level 1: 50%, level 2: 25%, level 3: 12.5%...
+  - 上图跳表数据结构可以如下解释：
+    - 数据结点Node链表为：BASE_HEADER->1->2->3->4->5。
+    - level 1的索引结点Index链表为：BASE_HEADER->2->4->5。
+    - level 2的索引结点Index链表为：BASE_HEADER->2->4。
+    - level 3的索引结点Index链表为：BASE_HEADER->2，head指针落在该链表的头结点HeadIndex上。
+
+```java
+// 根据顺序Map重新建立跳表, head指针设置为最高层的索引头结点 => level 1: 50%, level 2: 25%, level 3: 12.5%, 索引层级越高, 出现的概率越低
+private void buildFromSorted(SortedMap<K, ? extends V> map) {
+    if (map == null)
+        throw new NullPointerException();
+
+    // 构造函数&clone()调用时, h为 HeadIndex: { node: { Node: {key: null, value: BASE_HEADER, next: null} }, down: null, right: null, level: 1 }
+    HeadIndex<K,V> h = head;
+
+    // basepred表示最右边的数据结点, basepred为 Node: {key: null, value: BASE_HEADER, next: null}
+    Node<K,V> basepred = h.node;
+
+    // Track the current rightmost node at each level. Uses an
+    // ArrayList to avoid committing to initial or maximum level.
+    // 在每个级别跟踪当前最右边的节点。 使用 ArrayList 避免提交到初始或最大级别。
+    // preds第i桶存放第i级的最右边的索引结点(i为0时为null)
+    ArrayList<Index<K,V>> preds = new ArrayList<Index<K,V>>();
+
+    // initialize
+    // 为每层的最右索引结点占空位
+    // eg: h.level=1时, preds[0: null, 1: null]
+    for (int i = 0; i <= h.level; ++i)
+        preds.add(null);
+
+    // 设置preds数组元素, 设置每层最右的索引结点(i、level一一对应), 此时只有1个结点, 所以为HeadIndex结点
+    // eg: h.level=1时, preds[0: null, 1: h]
+    Index<K,V> q = h;
+    for (int i = h.level; i > 0; --i) {
+        preds.set(i, q);
+        q = q.down;
+    }
+
+    // 使用Node的有序迭代器遍历, 迭代器it, 当前迭代结点e, 伪随机数rnd, 确定到的层级j
+    Iterator<? extends Map.Entry<? extends K, ? extends V>> it = map.entrySet().iterator();
+    while (it.hasNext()) {
+        Map.Entry<? extends K, ? extends V> e = it.next();
+        int rnd = ThreadLocalRandom.current().nextInt();
+        int j = 0;
+
+        // 0x8000_0001: 最高位为1, 最低位为1 => 排除了负数和奇数, 也就是rnd肯定为正偶数
+        if ((rnd & 0x80000001) == 0) {
+            do {
+                // j为rnd连续1的个数, 因此增加层级的概率是1/2 * 1/2 = 1/4(本层级为1占1/2, +1层级为1占1/2)
+                ++j;
+            } while (((rnd >>>= 1) & 1) != 0);
+
+            // 当j大于当前层级, 则层级+1赋值给j => level 1: 50%, level 2: 25%, level 3: 12.5% => 索引层级越高, 出现的概率越低
+            if (j > h.level) j = h.level + 1;
+        }
+
+        // e键k, e值v, 构造数据结点z, 由于map是有序的, 则按顺序建立数据结点
+        // z为Node: {key: e.k, value: e.v, null},
+        K k = e.getKey();
+        V v = e.getValue();
+        if (k == null || v == null)
+            throw new NullPointerException();
+        Node<K,V> z = new Node<K,V>(k, v, null);
+
+        // 链接最右数据结点basepred与z, 此时basepred为 Node: {key: null, value: BASE_HEADER, next: { Node: {key: e.k, value: e.v, null} }}
+        basepred.next = z;
+
+        // z成为新的最右结点, 此时basepred为 Node: {key: e.k, value: e.v, null}
+        basepred = z;
+
+        // 如果确定到的层级j大于0, 说明j有效, 则从低到高建立索引结点
+        if (j > 0) {
+            Index<K,V> idx = null;
+
+            // i、j表示从下到上的层级(j为0时表示数据结点), i从1开始表示从第1级的索引结点开始处理
+            for (int i = 1; i <= j; ++i) {
+                // 基于数据结点z, i=1时, idx表示新建的索引结点, i=2时, idx表示i=1的索引结点
+                // eg: i=1时, idx1为 Index: node: { Node: {key: e.k, value: e.v, null} }, down: null, right: null }
+                // eg: i=2时, idx2为 Index: node: { Node: {key: e.k, value: e.v, null} }, down: idx1, right: null }
+                idx = new Index<K,V>(z, idx, null);
+
+                // 如果层级比h的层级还高, 说明需要建立更高层的HeadIndex结点
+                if (i > h.level)
+                    // eg: h=1, i=2时, h为 HeadIndex: { node: { Node: {key: null, value: BASE_HEADER, next: null} }, down: {h}, right: idx2, level: 2 }
+                    h = new HeadIndex<K,V>(h.node, h, idx, i);
+                // 如果i<=h, 则保持h不变
+                // eg: h=1, i=1时, h为 HeadIndex: { node: { Node: {key: null, value: BASE_HEADER, next: null} }, down: null, right: null, level: 1 }
+
+                // preds#size-1可以表示索引结点的级高(0表示数据结点), 如果i小于size, 表示i层还没超出以前的层级, 则需要把i层idx结点右移一位
+                // eg: h.level=1时, preds[0: null, 1: h], 此时i确实小于size
+                if (i < preds.size()) {
+                    // eg: i=1时, preds[1].right => h.right = idx1, 相当于i层结点right指针追加idx
+                    preds.get(i).right = idx;
+
+                    // 再设置preds[1] = idx1, 相当于i层的结点右移一个结点
+                    preds.set(i, idx);
+                }
+                // 如果i等于size(永远不会大于), 表示i层超出了1层最高层, 则往preds继续追加一个索引结点, 待后面遍历时补上
+                // eg: i=2时, 则preds[0: null, 1: h, 2: idx2]
+                else
+                    preds.add(idx);
+            }
+        }
+    }
+
+    // head指针设置为最高层的索引头结点
+    head = h;
+}
+```
+
+##### 迭代方法
+
+- **抽象的ConcurrentSkipListMap迭代器**：ConcurrentSkipListMap迭代器基类，**非快速失败机制**，提供advance方法提前提前缓存nextValue，因此ConcurrentSkipListMap迭代器是**弱一致性**的。
+- **Map.Entry迭代器**：继承ConcurrentSkipListMap迭代器基类，**非快速失败机制**，利用父类的advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回AbstractMap.SimpleImmutableEntry即Map.Entry**快照**，该快照不支持 {@code Entry.setValue} 方法。
+- **ConcurrentSkipListMap.Node#Key迭代器**：继承ConcurrentSkipListMap迭代器基类，**非快速失败机制**，利用父类的advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回ConcurrentSkipListMap.Node#Key对象。
+- **ConcurrentSkipListMap.Node#Value迭代器**：继承ConcurrentSkipListMap迭代器基类，**非快速失败机制**，利用父类的advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回ConcurrentSkipListMap.Node#Value对象。
+
+```java
+// ConcurrentSkipListMap迭代器基类
+abstract class Iter<T> implements Iterator<T> {
+    
+    Node<K,V> lastReturned;// next() 返回的最后一个节点
+    Node<K,V> next;// 从 next() 返回的下一个节点；
+    V nextValue;// 缓存下一个值字段以保持弱一致性
+
+    public final boolean hasNext() {
+        return next != null;
+    }
+
+    // 提前缓存nextValue
+    final void advance() {
+        if (next == null)
+            throw new NoSuchElementException();
+        lastReturned = next;
+        while ((next = next.next) != null) {
+            Object x = next.value;
+            if (x != null && x != next) {
+                @SuppressWarnings("unchecked") V vv = (V)x;
+                nextValue = vv;
+                break;
+            }
+        }
+    }
+    ...
+}
+
+// Map.Entry迭代器
+final class EntryIterator extends Iter<Map.Entry<K,V>> {
+    public Map.Entry<K,V> next() {
+        Node<K,V> n = next;
+        V v = nextValue;
+        advance();// 提前缓存nextValue
+        return new AbstractMap.SimpleImmutableEntry<K,V>(n.key, v);
+    }
+}
+
+// ConcurrentSkipListMap.Node#Key迭代器
+final class KeyIterator extends Iter<K> {
+    public K next() {
+        Node<K,V> n = next;
+        advance();
+        return n.key;
+    }
+}
+
+// ConcurrentSkipListMap.Node#Value迭代器
+final class ValueIterator extends Iter<V> {
+    public V next() {
+        V v = nextValue;
+        advance();
+        return v;
+    }
+}
+```
+
+##### 扩容方法
+
+链表方式实现，不需要扩容机制。
+
+##### 清除索引结点方法
+
+- **findPredecessor（Object，Comparator）**：查找比刚好key小一点的数据结点(**key前驱**)，如果找不到则会返回BASE_HEADER，查找同时还会**清除value为null的数据结点的索引结点**。
+
+```java
+// 查找比刚好key小一点的数据结点(key前驱), 如果找不到则会返回BASE_HEADER, 查找同时还会清除value为null的数据结点的索引结点
+private Node<K,V> findPredecessor(Object key, Comparator<? super K> cmp) {
+    if (key == null)
+        throw new NullPointerException(); // don't postpone errors
+
+    // 开始自旋, 键key, 比较器cmp
+    for (;;) {
+        // 从head指针开始遍历, 当前遍历结点q, q的后继r, q的下结点d, 右结点r对应的数据结点n, n键k
+        for (Index<K,V> q = head, r = q.right, d;;) {
+            // 如果q存在后继r, 分两种情况处理, value值为null的会被清除, 否则比较键值继续往后遍历同一层索引
+            if (r != null) {
+                Node<K,V> n = r.node;
+                K k = n.key;
+
+                // 如果n结点value为null, 说明n结点是删除的, 则CAS解除后继r的链接
+                if (n.value == null) {
+                    if (!q.unlink(r))
+                        // 如果CAS更新失败, 说明q或者r已被其他线程改变, 则进入下一轮自旋, 重新获取head指针, 重新遍历
+                        break;           // restart
+
+                    // 如果CAS更新成功, 则获取最新r指针为q最新的后继, 继续下一轮遍历
+                    r = q.right;         // reread r
+                    continue;
+                }
+
+                // n结点value不为null, 则使用比较器或者自然排序比较key与r.node的键, 如果比较结果大于0, 说明r.node键k小了(用于定位r的位置, 保证r.key刚好小于key), 则继续往前遍历, 直到r.node键刚好等于key或者大于key
+                if (cpr(cmp, key, k) > 0) {
+                    q = r;
+                    r = r.right;
+                    continue;
+                }
+            }
+
+            // 经过上面的判断, 因为r.key刚好等于或者大于key, 此时q肯定为比key小的结点, 如果q下结点为null, 说明最后一层索引层, 此时返回q的数据结点即可
+            if ((d = q.down) == null)
+                return q.node;
+
+            // 经过上面的判断, 因为r.key刚好等于或者大于key, 此时q肯定为比key小的结点, 如果q下结点不为null, 说明还没达到最后一层索引层, 此时索引往下走一层
+            q = d;
+            r = d.right;
+        }
+    }
+}
+```
+
+##### 清除空索引层方法
+
+- **tryReduceLevel（）**：
+  - 尝试减少索引层级, 如果head、head.down、head.down.down**3层都没有索引结点**了（即只剩下HeadIndex时），则删除head层，使head指向下一层。
+  - 但如果删除后复检时发现原head又多了索引结点, 则又会恢复原状, 取消删除。
+
+```java
+// 尝试减少索引层级, 如果head、head.down、head.down.down3层都没有索引结点了(即只剩下HeadIndex时), 则删除head层, 使head指向下一层; 但如果删除后复检时发现原head又多了索引结点, 则又会恢复原状, 取消删除
+private void tryReduceLevel() {
+    // head指针h, h下结点d, d下结点e
+    HeadIndex<K,V> h = head;
+    HeadIndex<K,V> d;
+    HeadIndex<K,V> e;
+
+    // 如果h的层级大于3, 且d、e不为null, 且h、d、e层只有HeadIndex结点(即没有索引结点时), 则CAS更新h到h.down
+    if (h.level > 3 &&
+        (d = (HeadIndex<K,V>)h.down) != null &&
+        (e = (HeadIndex<K,V>)d.down) != null &&
+        e.right == null &&
+        d.right == null &&
+        h.right == null &&
+        casHead(h, d) && // try to set
+        h.right != null) // recheck
+
+        // CAS更新h为d成功后, 再次检查h层是否还有索引结点, 如果确实还有, 那再把h改为原来的h(即取消删除), 否则直接返回
+        casHead(d, h);   // try to backout
+}
+```
+
+##### 清除数据结点方法
+
+- **helpDelete（Node，Node）**：通过标记后继结点辅助删除实例结点，在实例结点**value为null时调用**。
+
+```java
+// 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+if ((v = n.value) == null) {    // n is deleted
+    n.helpDelete(b, f);
+    break;
+}
+
+// 通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用
+void helpDelete(Node<K,V> b, Node<K,V> f) {
+    
+    // 前驱b, 后继f, 当前要删除的结点this, 如果f还为后继, b仍为前驱, 说明this还没被其他线程删除
+    if (f == next && this == b.next) {
+        
+        // 如果f为null(bug?), 或者f不为null且f值不为自身, 说明f仍未标记, 则构造新的后继结点, 另原本n的后继f为标记结点
+        if (f == null || f.value != f) // not already marked 尚未标记
+            casNext(f, new Node<K,V>(f));
+
+        // 如果f不为null, 且f值为自身, 则链接n的前驱与f.next(新构建的f结点, 其next还是指向正常的node结点), 此时完成n与旧f的脱钩
+        else
+            b.casNext(this, f.next);
+
+        // 而f为null, 且n也为null的情况, 可视它们为null的链尾, 不需要处理
+    }
+}
+```
+
+##### 清除索引结点与数据结点方法
+
+- **findNode（Object）**：
+  - 返回持有key的结点(如果没有则返回null)，同时清除遍历key沿途看到的任何已删除节点，包括**数据结点和索引结点**。
+  - 底层调用了findPredecessor（Object，Comparator）来清除索引结点，调用了helpDelete（Node，Node）来清除数据结点。
+
+```java
+// 返回持有key的结点(如果没有则返回null), 同时清除遍历key沿途看到的任何已删除节点, 包括数据结点和索引结点
+private Node<K,V> findNode(Object key) {
+    if (key == null)
+        throw new NullPointerException(); // don't postpone errors
+    Comparator<? super K> cmp = comparator;
+
+    // 开始自旋, 比较器comparator, 键key, key前驱b, b后继n, n后继f, n的值v, 比较结果c
+    outer: for (;;) {
+        // 查找比刚好key小一点的数据结点(key前驱), 如果找不到则会返回BASE_HEADER, 查找同时还会清除value为null的数据结点的索引结点
+        for (Node<K,V> b = findPredecessor(key, cmp), n = b.next;;) {
+            Object v; int c;
+
+            // 如果key要所在位置为null, 说明没找到key对应的结点, 此时结束自旋, 返回null
+            if (n == null)
+                break outer;
+
+            // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+            Node<K,V> f = n.next;
+            if (n != b.next)                // inconsistent read
+                break;
+
+            // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+            if ((v = n.value) == null) {    // n is deleted
+                n.helpDelete(b, f);
+                break;
+            }
+
+            // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时重新自旋, 以获取新的b
+            if (b.value == null || v == n)  // b is deleted
+                break;
+
+            // 如果b和n都不是已删除的结点, 则比较key与n.key, 如果key == n.key, 说明n就是要找结点结点, 此时返回n结点
+            if ((c = cpr(cmp, key, n.key)) == 0)
+                return n;
+
+            // 如果c小于0, 即key < n.key, 说明b遍历到了链尾也没找到key对应的结点, 此时结束自旋, 返回null
+            if (c < 0)
+                break outer;
+
+            // 如果c大于0, 即key > n.key, 说明key对应的结点可能还在b后面, 则继续遍历b链表
+            b = n;
+            n = f;
+        }
+    }
+    return null;
+}
+```
+
+##### 添加元素方法
+
+**所有方法键都不能为null**。
+
+- **put（K，V）**：将指定值和指定键相关联，形成key-value键值对，如果包含相同的键，则会替换旧值。
+- **putIfAbsent（K，V）**：将指定值和指定键相关联，形成key-value键值对，如果包含相同的键，则不会替换旧值。
+- **putAll（Map）**：根据复制集合元素添加元素，AbstractMap#putAll实现的默认方法，底层调用put方法。
+
+```java
+// 将指定值和指定键相关联，形成key-value键值对，如果包含相同的键，则会替换旧值
+public V put(K key, V value) {
+    if (value == null)
+        throw new NullPointerException();
+    return doPut(key, value, false);
+}
+
+// 将指定值和指定键相关联，形成key-value键值对，如果包含相同的键，则不会替换旧值
+public V putIfAbsent(K key, V value) {
+    if (value == null)
+        throw new NullPointerException();
+    return doPut(key, value, true);
+}
+
+// 根据复制集合元素添加元素，AbstractMap#putAll实现的默认方法，底层调用put方法
+public void putAll(Map<? extends K, ? extends V> m) {
+    for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+        put(e.getKey(), e.getValue());
+}
+
+// put方法核心逻辑, onlyIfAbsent为true代表只允许不存在时插入(即存在时不允许插入或者替换), 此时返回n值; 否则替换n值, 返回value值
+private V doPut(K key, V value, boolean onlyIfAbsent) {
+    Node<K,V> z;             // added node
+    if (key == null)
+        throw new NullPointerException();
+    Comparator<? super K> cmp = comparator;
+
+    // 开始自旋, 要添加的结点z, 比较器comparator, 键key, 值value, key前驱b, b后继n, n后继f, n的值v, 比较结果c
+    outer: for (;;) {
+        // 查找比刚好key小一点的数据结点(key前驱), 如果找不到则会返回BASE_HEADER, 查找同时还会清除value为null的数据结点的索引结点
+        for (Node<K,V> b = findPredecessor(key, cmp), n = b.next;;) {
+            // 如果key要插入位置存在后继
+            if (n != null) {
+                Object v; int c;
+                Node<K,V> f = n.next;
+
+                // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+                if (n != b.next)
+                    break;
+
+                // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+                if ((v = n.value) == null) {
+                    n.helpDelete(b, f);
+                    break;
+                }
+
+                // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时重新自旋, 以获取新的b
+                if (b.value == null || v == n)
+                    break;
+
+                // 如果b和n都不是已删除的结点, 则比较key与n.key, 如果key > n.key, 说明key的位置应该在n的后面, 也就是跳表追加了更接近key的结点, 则继续遍历
+                if ((c = cpr(cmp, key, n.key)) > 0) {
+                    b = n;
+                    n = f;
+                    continue;
+                }
+
+                // 如果c为0, 说明key == n.key, 说明n就是key对应的结点
+                if (c == 0) {
+                    // 如果只允许不存在时插入(即存在时不允许插入或者替换), 则返回n的值, 否则替换n值, 返回value值
+                    if (onlyIfAbsent || n.casValue(v, value)) {
+                        @SuppressWarnings("unchecked") V vv = (V)v;
+                        return vv;
+                    }
+
+                    // 如果允许存在时插入或者替换, 但CAS更新n值失败了, 说明被其他线程替换掉了, 此时重新自旋, 以获取新的b
+                    break;
+                }
+
+                // 如果c小于0, 即key < n.key, 且key != b.key, 说明b确实是key的前驱, 则继续往下走, 随机生成并维护索引结点
+            }
+
+            // 到这里, key已经找到了插入的位置, 则构造node结点z, key -> n
+            z = new Node<K,V>(key, value, n);
+
+            // CAS链接b与key, b -> key, 如果CAS失败, 说明key插入失败, 则重新自旋, 以获取新的b
+            if (!b.casNext(n, z))
+                break;
+            
+            // CAS链接b与key, b -> key, 如果CAS成功, 说明key插入成功, 则退出自旋
+            break outer;
+        }
+    }
+
+    // 到这里, key对应的数据结点z已创建并维护完毕, 此时需要随机生成level并维护索引结点
+    int rnd = ThreadLocalRandom.nextSecondarySeed();
+
+    // 0x8000_0001: 最高位为1, 最低位为1 => 排除了负数和奇数, 也就是rnd肯定为正偶数
+    if ((rnd & 0x80000001) == 0) {
+        int level = 1, max;
+
+        // level为rnd连续1的个数, 因此增加层级的概率是1/2 * 1/2 = 1/4(本层级为1占1/2, +1层级为1占1/2)
+        while (((rnd >>>= 1) & 1) != 0)
+            ++level;
+
+        // 索引结点idx, 顶层索引头结点h
+        Index<K,V> idx = null;
+        HeadIndex<K,V> h = head;
+
+        // 如果随机生成的level小于等于h的层级, 说明不用更新顶层索引头结点h的指针, 则依次建立1~level级的索引结点, 但还没维护与前驱索引结点的链接
+        if (level <= (max = h.level)) {
+            for (int i = 1; i <= level; ++i)
+                idx = new Index<K,V>(z, idx, null);
+        }
+
+        // 如果随机生成的level大于h的层级, 说明需要更新顶层索引头结点head的指针, 则更新head指针(只维护head指针与z对应的idx结点关系, 因为这层只需要维护这个关系即可)
+        else {
+            level = max + 1;
+
+            // 创建level+1索引结点数组, size-1可以表示索引结点的级高(0表示数据结点), 如果i小于size, 表示i层还没超出以前的层级, 则需要把i层idx结点右移一位
+            @SuppressWarnings("unchecked")
+            Index<K,V>[] idxs = (Index<K,V>[])new Index<?,?>[level+1];
+
+            // 依次建立1~level级的索引结点, 并存进idxs数组(但还没维护与前驱索引结点的链接), idxs[1~level]分别表示i层z对应的索引结点
+            for (int i = 1; i <= level; ++i)
+                idxs[i] = idx = new Index<K,V>(z, idx, null);
+
+            // 开始自旋, 再次检查顶层索引头结点h是否被其他线程改变了
+            for (;;) {
+                h = head;
+                int oldLevel = h.level;
+
+                // 如果level不在大于h.level, 说明h确实被其他线程改变了, 则结束自旋, 此后直接维护前驱索引结点即可, 无需更新head指针了
+                if (level <= oldLevel) 
+                    break;
+
+                // 如果level确实还大于h.level, 说明h确实没被其他线程更改过, 则更新h指针为level层的HeadIndex, 这里只是维护好head指针(方便后面利用head进行每个HeadIndex与每层z对应的idx结点的指针维护)
+                HeadIndex<K,V> newh = h;
+                Node<K,V> oldbase = h.node;
+                for (int j = oldLevel+1; j <= level; ++j)
+                    newh = new HeadIndex<K,V>(oldbase, newh, idxs[j], j);
+
+                // 如果CAS更新head指针成功, 则更新h指针指向最新的HeadIndex, level为以前h的level, idx为以前h的level层z对应的索引结点
+                if (casHead(h, newh)) {
+                    h = newh;
+                    idx = idxs[level = oldLevel];
+                    break;
+                }
+                // 如果CAS更新h指针失败, 则h还是为以前那个HeadIndex, level为max+1, idx为max+1层z对应的索引结点, 此时重新自旋, 获取最新的head指针
+            }
+        }
+
+        // find insertion points and splice in 找到插入点并拼接
+        // 开始自旋, insertionLevel为以前h的level, j为新h的level, q为新的h, r为q的后继, t为以前h的level层z对应的索引结点
+        splice: for (int insertionLevel = level;;) {
+            int j = h.level;
+
+            // 从h开始遍历, 维护每个t的索引结点前驱
+            for (Index<K,V> q = h, r = q.right, t = idx;;) {
+                // 如果q为null, 或者t为null, 说明到了level 0索引结点(不存在), 代表维护结束, 结束自旋
+                if (q == null || t == null)
+                    break splice;
+
+                // q不为null, 且t不为null, 说明索引结点q和t都是正常的, 如果r不为null, 说明还没找到原本最右的索引结点
+                if (r != null) {
+                    Node<K,V> n = r.node;
+
+                    // compare before deletion check avoids needing recheck 在删除检查之前进行比较避免需要重新检查
+                    // 使用比较器或者自然排序比较key和后继的数据结点n的键, 比较结果c
+                    int c = cpr(cmp, key, n.key);
+
+                    // 如果n结点value为null, 说明n结点是删除的, 则CAS解除后继r的链接
+                    if (n.value == null) {
+                        // 如果CAS更新失败, 说明q或者r已被其他线程改变, 则进入下一轮自旋, 从头开始遍历
+                        if (!q.unlink(r))
+                            break;
+
+                        // 如果CAS更新成功, 则获取最新r指针为q最新的后继, 接着遍历即可
+                        r = q.right;
+                        continue;
+                    }
+
+                    // n结点value不为null, 如果比较结果大于0, 说明r.node键k小了(用于定位r的位置, 保证r.key刚好小于key), 则继续往前遍历, 直到r.node键刚好等于key或者大于key
+                    if (c > 0) {
+                        q = r;
+                        r = r.right;
+                        continue;
+                    }
+                }
+
+                // 经过上面的判断, 因为r.key刚好等于或者大于key, 此时q肯定为比key小的结点
+                // 如果j减小到了以前h的level, 说明j层适合维护t的前驱, 则CAS更新实例结点q最右结点r为t
+                if (j == insertionLevel) {
+                    // 如果CAS成功, 则q链表上, 最右索引结点为t
+                    if (!q.link(r, t))
+                        // 如果CAS更新失败, 说明r已经被更改了, 则重新自旋, 重新从head指针位置开始找过来
+                        break; // restart
+
+                    // 如果t的数据结点已经删除, 则清除遍历key沿途看到的任何已删除节点, 包括数据结点和索引结点, 代表无需再维护索引结点了, 结束自旋返回null, 表明插入完成(实际上是被删除了懒得插了)
+                    if (t.node.value == null) {
+                        findNode(key);
+                        break splice;
+                    }
+                    // t的数据结点没有被删除, 说明该层z对应的idx结点前驱已经维护完毕, 则insertionLevel-1, 继续维护下一层z对应的idx结点前驱, 此时如果insertionLevel-1为0, 说明所有层的idx结点前驱都维护完毕了, 所以结束自旋返回null即可, 代表插入完毕
+                    if (--insertionLevel == 0)
+                        break splice;
+                }
+
+                // 如果j大于以前h的level, 说明j层不是要维护的索引层, 则z对应的idx结点向下走一层
+                if (--j >= insertionLevel && j < level)
+                    t = t.down;
+
+                // 到这里, 前一层z对应的idx结点前驱已经维护完毕了, 重新初始化HeadIndex q和Index r, q往下走一层, r为q的后继
+                q = q.down;
+                r = q.right;
+            }
+        }
+    }
+
+    // 插入成功, 返回null
+    return null;
+}
+```
+
+##### 删除元素方法
+
+- **remove（Object）**：如果key存在，则从此映射中删除该key对应的映射，忽略value值。
+- **remove（Object，Object）**：删除key和value都equals的键值对，value值必须匹配。
+
+```java
+// 如果key存在，则从此映射中删除该key对应的映射，忽略value值
+public V remove(Object key) {
+    return doRemove(key, null);
+}
+
+// 删除key和value都equals的键值对，value值必须匹配
+public boolean remove(Object key, Object value) {
+    if (key == null)
+        throw new NullPointerException();
+    return value != null && doRemove(key, value) != null;
+}
+
+// remove方法核心逻辑, 如果value不为null, 则必须key和value都匹配才删除该结点, 否则key匹配即可删除
+final V doRemove(Object key, Object value) {
+    if (key == null)
+        throw new NullPointerException();
+    Comparator<? super K> cmp = comparator;
+
+    // 开始自旋, 比较器comparator, 键key, 值value, key前驱b, b后继n, n值value, key比较结果c, n后继f
+    outer: for (;;) {
+        // 查找比刚好key小一点的数据结点(key前驱), 如果找不到则会返回BASE_HEADER, 查找同时还会清除value为null的数据结点的索引结点
+        for (Node<K,V> b = findPredecessor(key, cmp), n = b.next;;) {
+            Object v; int c;
+            if (n == null)
+                break outer;
+            Node<K,V> f = n.next;
+
+            // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+            if (n != b.next)                    // inconsistent read
+                break;
+
+            // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+            if ((v = n.value) == null) {        // n is deleted
+                n.helpDelete(b, f);
+                break;
+            }
+
+            // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时重新自旋, 以获取新的b
+            if (b.value == null || v == n)      // b is deleted
+                break;
+
+            // 如果b和n都不是已删除的结点, 则比较key与n.key, 如果key < n.key, 说明key不存在(有可能真的不存在、也有可能被之前存在但被其他线程删除了), 则直接结束自旋返回null即可
+            if ((c = cpr(cmp, key, n.key)) < 0)
+                break outer;
+
+            // 如果key > n.key, 说明key的位置应该在n的后面, 则继续遍历
+            if (c > 0) {
+                b = n;
+                n = f;
+                continue;
+            }
+
+            // 如果key == n.key, 说明n就是key要找的结点, 如果指定了value, 但value不匹配, 则直接结束自旋返回null即可
+            if (value != null && !value.equals(v))
+                break outer;
+
+            // 如果key == n.key, 且不指定value或者value匹配了, 则CAS更新n.value为null, 代表删除结点n
+            if (!n.casValue(v, null))
+                // 如果CAS失败, 说明v.value已经被其他线程更新掉了, 即删除失败, 则重新自旋
+                break;
+
+            // 如果CAS删除n结点成功, 则再CAS更新f(即n.next)的next指针指向f自身, 代表使f为标记结点, 如果失败了, 则再CAS更新b.next为f结点
+            if (!n.appendMarker(f) || !b.casNext(n, f))
+                // 如果CAS更新f后继失败, 且再CAS更新b后继失败, 则清除遍历key沿途看到的任何已删除节点, 包括数据结点和索引结点
+                findNode(key);
+
+            //  如果CAS更新f后继成功, 或者f后继更新失败但b后继更新成功
+            else {
+                // 清除value为null的数据结点的索引结点
+                findPredecessor(key, cmp);      // clean index
+
+                // 如果head没有索引结点了, 则尝试减少索引层级
+                if (head.right == null)
+                    // 如果head、head.down、head.down.down3层都没有索引结点了(即只剩下HeadIndex时), 则删除head层, 使head指向下一层; 但如果删除后复检时发现原head又多了索引结点, 则又会恢复原状, 取消删除
+                    tryReduceLevel();
+            }
+
+            // 删除结点并清除索引结点后, 返回n.value的深复制vv
+            @SuppressWarnings("unchecked") V vv = (V)v;
+            return vv;
+        }
+    }
+    return null;
+}
+```
+
+##### 获取元素方法
+
+- **get（Object）**：获取指定键映射到的值，如果此映射不包含键的映射，则返回 {@code null}。
+- **getOrDefault（Object，V）**：带默认值的获取，如果获取不到key的元素，则返回默认值。
+
+```java
+// 获取指定键映射到的值，如果此映射不包含键的映射，则返回 {@code null}
+public V get(Object key) {
+    return doGet(key);
+}
+
+// 带默认值的获取，如果获取不到key的元素，则返回默认值
+public V getOrDefault(Object key, V defaultValue) {
+    V v;
+    return (v = doGet(key)) == null ? defaultValue : v;
+}
+
+// get方法核心逻辑, 与findNode方法几乎相同, 但返回的是结点的值
+private V doGet(Object key) {
+    if (key == null)
+        throw new NullPointerException();
+    Comparator<? super K> cmp = comparator;
+
+    // 开始自旋, 比较器comparator, 键key, key前驱b, b后继n, n后继f, n的值v, 比较结果c
+    outer: for (;;) {
+        // 查找比刚好key小一点的数据结点(key前驱), 如果找不到则会返回BASE_HEADER, 查找同时还会清除value为null的数据结点的索引结点
+        for (Node<K,V> b = findPredecessor(key, cmp), n = b.next;;) {
+            Object v; int c;
+
+            // 如果key要所在位置为null, 说明没找到key对应的结点, 此时结束自旋, 返回null
+            if (n == null)
+                break outer;
+
+            // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+            Node<K,V> f = n.next;
+            if (n != b.next)                // inconsistent read
+                break;
+
+            // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+            if ((v = n.value) == null) {    // n is deleted
+                n.helpDelete(b, f);
+                break;
+            }
+
+            // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时重新自旋, 以获取新的b
+            if (b.value == null || v == n)  // b is deleted
+                break;
+
+            // 如果b和n都不是已删除的结点, 则比较key与n.key, 如果key == n.key, 说明n就是要找结点结点, 此时返回n结点的值
+            if ((c = cpr(cmp, key, n.key)) == 0) {
+                @SuppressWarnings("unchecked") V vv = (V)v;
+                return vv;
+            }
+
+            // 如果c小于0, 即key < n.key, 说明b遍历到了链尾也没找到key对应的结点, 此时结束自旋, 返回null
+            if (c < 0)
+                break outer;
+
+            // 如果c大于0, 即key > n.key, 说明key对应的结点可能还在b后面, 则继续遍历b链表
+            b = n;
+            n = f;
+        }
+    }
+    return null;
+}
+```
+
+##### 实现NavigableMap接口方法
+
+###### 获取最近元素方法
+
+- **findNear（K，int，Comparator）**：返回指定key和拟合关系的最近节点(通过LT|EQ或者GT|EQ 来控制 小于等于或者大于等于), 如果没有则为 null, 用于lower、floor、ceiling、higher方法。
+- **getNear（K，int）**：为findNear的结果封装成SimpleImmutableEntry对象，生成时的映射快照，不支持setValue方法。
+
+```java
+// 控制值或作为findNear的参数
+private static final int EQ = 1;
+private static final int LT = 2;
+private static final int GT = 0; // Actually checked as !LT
+
+// 返回指定key和拟合关系的最近节点(通过LT|EQ或者GT|EQ 来控制 小于等于或者大于等于), 如果没有则为 null, 用于lower、floor、ceiling、higher方法
+final Node<K,V> findNear(K key, int rel, Comparator<? super K> cmp) {
+    if (key == null)
+        throw new NullPointerException();
+
+    // 开始自旋, 比较器comparator, 键key, key前驱b, b后继n, n后继f, n的值v, 比较结果c
+    for (;;) {
+        for (Node<K,V> b = findPredecessor(key, cmp), n = b.next;;) {
+            Object v;
+
+            // 如果key要所在位置为null, 说明没找到key对应的结点, 此时如果rel不为LT || rel为LT/LT|EQ, 但b为BASE_HEADER, 则返回null, 代表找不到后继或者前驱结点; 否则如果rel为LT/LT|EQ且b不为BASE_HEADER, 则返回key前驱b结点
+            if (n == null)
+                return ((rel & LT) == 0 || b.isBaseHeader()) ? null : b;
+
+            // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+            Node<K,V> f = n.next;
+            if (n != b.next)                  // inconsistent read
+                break;
+
+            // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+            if ((v = n.value) == null) {      // n is deleted
+                n.helpDelete(b, f);
+                break;
+            }
+
+            // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时重新自旋, 以获取新的b
+            if (b.value == null || v == n)      // b is deleted
+                break;
+
+            // 如果b和n都不是已删除的结点, 则比较key与n.key
+            int c = cpr(cmp, key, n.key);
+
+            // 1. 如果key == n.key, 说明n就是要找结点结点, 如果此时rel为LT|EQ(小于等于)或者GT|EQ(大于等于)时, 则返回n
+            // 2. 如果key < n.key, 说明b遍历到了链尾也没找到key对应的结点, 如果此时rel为GT(大于)或者GT|EQ(大于等于)时, 则返回n
+            if ((c == 0 && (rel & EQ) != 0) || (c < 0 && (rel & LT) == 0))
+                return n;
+
+            // 3. 如果key < n.key, 如果此时rel为LT(小于)或者LT|EQ(小于等于)时
+            if ( c <= 0 && (rel & LT) != 0)
+                // 如果为BASE_HEADER, 则返回null, 代表找不到后继或者前驱结点; 否则返回key前驱b结点
+                return b.isBaseHeader() ? null : b;
+
+            // 如果c大于0, 即key > n.key, 说明key对应的结点可能还在b后面, 则继续遍历b链表
+            b = n;
+            n = f;
+        }
+    }
+}
+
+// 为findNear的结果封装成SimpleImmutableEntry对象，生成时的映射快照，不支持setValue方法
+final AbstractMap.SimpleImmutableEntry<K,V> getNear(K key, int rel) {
+    Comparator<? super K> cmp = comparator;
+    for (;;) {
+        Node<K,V> n = findNear(key, rel, cmp);
+        if (n == null)
+            return null;
+        AbstractMap.SimpleImmutableEntry<K,V> e = n.createSnapshot();
+        if (e != null)
+            return e;
+    }
+}
+```
+
+###### 获取小于Key的最大键方法
+
+- **lowerEntry（K）**：
+  - 底层**LT**依赖findNear。
+  - 返回小于Key的最大键的Entry，如果没有这样的键，则返回 {@code null}。
+  - 返回的是{@code Map.Entry} 生成时的**映射快照**，不支持setValue方法。
+- **lowerKey（K）**：
+  - 底层**LT**依赖findNear。
+  - 返回小于Key的最大键，如果没有这样的键，则返回 {@code null}。
+
+```java
+// 底层LT依赖findNear，返回小于Key的最大键的Entry，如果没有这样的键，则返回 {@code null}
+public Map.Entry<K,V> lowerEntry(K key) {
+    return getNear(key, LT);
+}
+
+// 底层LT依赖findNear，返回小于指定键的最大键的条目； 如果不存在这样的条目（即树中的最小键大于指定的键），则返回 {@code null}
+public K lowerKey(K key) {
+    Node<K,V> n = findNear(key, LT, comparator);
+    return (n == null) ? null : n.key;
+}
+```
+
+###### 获取小于等于Key的最大键方法
+
+- **floorEntry（K）**：
+  - 底层**LT|EQ**依赖findNear。
+  - 返回小于或者等于Key的最大键的Entry，如果没有这样的键，则返回 {@code null}。
+  - 返回的是 {@code Map.Entry} 生成时的**映射快照**，不支持setValue方法。
+- **floorKey（K）**：
+  - 底层**LT|EQ**依赖findNear。
+  - 返回小于或者等于Key的最大键，如果没有这样的键，则返回 {@code null}。
+
+```java
+// 底层LT|EQ依赖findNear，返回小于或者等于Key的最大键的Entry，如果没有这样的键，则返回 {@code null}，返回的是 {@code Map.Entry} 生成时的映射快照，不支持setValue方法。
+public Map.Entry<K,V> floorEntry(K key) {
+    return getNear(key, LT|EQ);
+}
+
+// 底层LT|EQ依赖findNear，返回小于或者等于Key的最大键，如果没有这样的键，则返回 {@code null}。
+public K floorKey(K key) {
+    Node<K,V> n = findNear(key, LT|EQ, comparator);
+    return (n == null) ? null : n.key;
+}
+```
+
+###### 获取大于等于key的最小键方法
+
+- **ceilingEntry（K）**：
+  - 底层**GT|EQ**依赖findNear。
+  - 返回大于或者等于Key的最小键的Entry，如果没有这样的键，则返回 {@code null}。
+  - 返回的是 {@code Map.Entry} 生成时的**映射快照**，不支持setValue方法。
+- **ceilingKey（K）**：
+  - 底层**GT|EQ**依赖findNear。
+  - 返回大于或者等于Key的最小键，如果没有这样的键，则返回 {@code null}。
+
+```java
+// 底层GT|EQ依赖findNear，返回大于或者等于Key的最小键的Entry，如果没有这样的键，则返回 {@code null}。返回的是 {@code Map.Entry} 生成时的映射快照，不支持setValue方法
+public Map.Entry<K,V> ceilingEntry(K key) {
+    return getNear(key, GT|EQ);
+}
+
+// 底层GT|EQ依赖findNear，返回大于或者等于Key的最小键，如果没有这样的键，则返回 {@code null}
+public K ceilingKey(K key) {
+    Node<K,V> n = findNear(key, GT|EQ, comparator);
+    return (n == null) ? null : n.key;
+}
+```
+
+###### 获取大于key的最小键方法
+
+- **higherEntry（K）**：
+  - 底层**GT**依赖findNear。
+  - 返回大于Key的最小键的Entry，如果没有这样的键，则返回 {@code null}。
+  - 返回的是{@code Map.Entry} 生成时的**映射快照**，不支持setValue方法。
+- **higherKey（K）**：
+  - 底层**GT**依赖findNear。
+  - 返回大于Key的最小键，如果没有这样的键，则返回 {@code null}。
+
+```java
+// 底层GT依赖findNear，返回大于Key的最小键的Entry，如果没有这样的键，则返回 {@code null}。返回的是{@code Map.Entry} 生成时的映射快照，不支持setValue方法。
+public Map.Entry<K,V> higherEntry(K key) {
+    return getNear(key, GT);
+}
+
+// 底层GT依赖findNear，返回大于Key的最小键，如果没有这样的键，则返回 {@code null}。
+public K higherKey(K key) {
+    Node<K,V> n = findNear(key, GT, comparator);
+    return (n == null) ? null : n.key;
+}
+```
+
+###### 获取最小键方法
+
+- **firstEntry（）**：返回最小键的Entry，如果条目为空，则返回 {@code null}。
+- **firstKey（）**：返回最小键，如果没有这样的键，则抛出异常。
+- **pollFirstEntry（）**：删除并返回最小键的Entry，如果条目为空，则返回 {@code null}。
+
+```java
+// 返回最小键的Entry，如果条目为空，则返回 {@code null}
+public Map.Entry<K,V> firstEntry() {
+    for (;;) {
+        // findNode的特殊变体, 用于获取第一个有效节点, 如果返回之前刚好n被置null了, 则通过标记后继结点辅助删除实例结点
+        Node<K,V> n = findFirst();
+        if (n == null)
+            return null;
+        AbstractMap.SimpleImmutableEntry<K,V> e = n.createSnapshot();
+        if (e != null)
+            return e;
+    }
+}
+
+// 返回最小键，如果没有这样的键，则抛出异常
+public K firstKey() {
+    // findNode的特殊变体, 用于获取第一个有效节点
+    Node<K,V> n = findFirst();
+    if (n == null)
+        throw new NoSuchElementException();
+    return n.key;
+}
+// findNode的特殊变体, 用于获取第一个有效节点, 如果返回之前刚好n被置null了, 则通过标记后继结点辅助删除实例结点
+final Node<K,V> findFirst() {
+    // 从head开始遍历node, 直到第一个不为null的后继n, 并返回n.value
+    for (Node<K,V> b, n;;) {
+        if ((n = (b = head.node).next) == null)
+            return null;
+        if (n.value != null)
+            return n;
+        // 如果返回之前刚好n被置null了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用
+        n.helpDelete(b, n.next);
+    }
+}
+
+// 删除并返回最小键的Entry，如果条目为空，则返回 {@code null}
+public Map.Entry<K,V> pollFirstEntry() {
+    // 删除第一个条目的数据结点以及与之对应的每层的索引结点, 并返回其键和值的快照
+    return doRemoveFirstEntry();
+}
+// 删除第一个条目的数据结点以及与之对应的每层的索引结点, 并返回其键和值的快照
+private Map.Entry<K,V> doRemoveFirstEntry() {
+    for (Node<K,V> b, n;;) {
+        // 从head开始遍历node, 找到第一个不为null的后继n, 如果找不到则返回null
+        if ((n = (b = head.node).next) == null)
+            return null;
+
+        // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+        Node<K,V> f = n.next;
+        if (n != b.next)
+            continue;
+
+        // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后重新自旋, 以获取新的b
+        Object v = n.value;
+        if (v == null) {
+            n.helpDelete(b, f);
+            continue;
+        }
+
+        // 如果后继n没有发生改变, 则CAS更新n.value为null, 即删除n结点
+        if (!n.casValue(v, null))
+            // 如果CAS失败, 说明v.value已经被其他线程更新掉了, 即删除失败, 则重新自旋
+            continue;
+
+        // 如果CAS删除n结点成功, 则再CAS更新f(即n.next)的next指针指向f自身, 代表使f为标记结点, 如果失败了, 则再CAS更新b.next为f结点
+        if (!n.appendMarker(f) || !b.casNext(n, f))
+            // 通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用
+            findFirst(); // retry
+
+        // 清除数据结点后, 继续清除与删除每层第一个条目关联的索引节点
+        clearIndexToFirst();
+
+        // 数据结点和索引结点都删除成功后, 则返回n键、n值的快照
+        @SuppressWarnings("unchecked") V vv = (V)v;
+        return new AbstractMap.SimpleImmutableEntry<K,V>(n.key, vv);
+    }
+}
+// 清除与删除每层第一个条目关联的索引节点
+private void clearIndexToFirst() {
+    // 开始自旋
+    for (;;) {
+        // 从head开始遍历索引层, head指针q, q的后继r
+        for (Index<K,V> q = head;;) {
+            Index<K,V> r = q.right;
+            // 如果r不为null, 且r对应的数据结点为null, 说明找到了q层第一个需要删除的的索引结点, 则CAS解除后继r的链接
+            if (r != null && r.indexesDeletedNode() && !q.unlink(r))
+                // 如果r无效, 或者r数据结点有效, 或者CAS解除r链接失败, 则重新自旋
+                break;
+
+            // CAS解除r链接成功, 如果q下结点为null, 说明清除到了最后一层, 即每层的第一个需要删除的索引已经清理完毕了
+            if ((q = q.down) == null) {
+                // 再判断是否需要减少索引层级, 如果head没有索引结点了, 则尝试减少索引层级
+                if (head.right == null)
+                    // 如果head、head.down、head.down.down3层都没有索引结点了(即只剩下HeadIndex时), 则删除head层, 使head指向下一层; 但如果删除后复检时发现原head又多了索引结点, 则又会恢复原状, 取消删除
+                    tryReduceLevel();
+
+                // 如果不需要减少索引层级, 或者减少成功后, 则返回即可
+                return;
+            }
+        }
+    }
+}
+```
+
+###### 获取最大键方法
+
+- **lastEntry（）**：返回最大键的Entry，如果条目为空，则返回 {@code null}。
+- **lastKey（）**：返回最大键，如果没有这样的键，则抛出异常。
+- **pollLastEntry（）**：删除并返回最大键的Entry，如果条目为空，则返回 {@code null}。
+
+```java
+// 返回最大键的Entry，如果条目为空，则返回 {@code null}
+public Map.Entry<K,V> lastEntry() {
+    for (;;) {
+        // 获取最后一个有效节点: 先走到最后一个索引结点, 再从该索引的数据结点遍历到最后一个数据结点，对比findPredecessor，该方法不需要比较key大小
+        Node<K,V> n = findLast();
+        if (n == null)
+            return null;
+        AbstractMap.SimpleImmutableEntry<K,V> e = n.createSnapshot();
+        if (e != null)
+            return e;
+    }
+}
+
+// 返回最大键，如果没有这样的键，则抛出异常
+public K lastKey() {
+    // 获取最后一个有效节点: 先走到最后一个索引结点, 再从该索引的数据结点遍历到最后一个数据结点，对比findPredecessor，该方法不需要比较key大小
+    Node<K,V> n = findLast();
+    if (n == null)
+        throw new NoSuchElementException();
+    return n.key;
+}
+// 获取最后一个有效节点: 先走到最后一个索引结点, 再从该索引的数据结点遍历到最后一个数据结点，对比findPredecessor，该方法不需要比较key大小
+final Node<K,V> findLast() {
+    Index<K,V> q = head;
+
+    // 开始自旋, head指针q, q下结点d, q后继r
+    for (;;) {
+        Index<K,V> d, r;
+
+        // 如果q存在后继r, 说明还没到最右一个索引结点, 则继续遍历q层索引
+        if ((r = q.right) != null) {
+            // 如果r已被删除, 则返回CAS解除后继succ的链接, 更新q为head指针, 继续自旋
+            if (r.indexesDeletedNode()) {
+                q.unlink(r);
+                q = head; // restart
+            }
+            // 如果r没被删除, 则继续遍历q层索引结点
+            else
+                q = r;
+        }
+        // 如果q不存在后继r, 说明q层索引遍历到尾了, 则q往下走一层, 继续自旋
+        else if ((d = q.down) != null) {
+            q = d;
+        }
+        // 如果q层索引到尾了, 且q为最后一层索引, 说明找到了最后一个索引结点
+        else {
+            // 从最后一个索引的数据结点开始遍历, q的数据结点b, b后继n, n后继f
+            for (Node<K,V> b = q.node, n = b.next;;) {
+                // 如果n为null了, 说明数据结点遍历到尾了, 则返回b; 如果b为BASE_HEADER, 则返回null, 表示没有任何数据结点
+                if (n == null)
+                    return b.isBaseHeader() ? null : b;
+
+                // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+                Node<K,V> f = n.next;            // inconsistent read
+                if (n != b.next)
+                    break;
+
+                // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后结束遍历, 重新获取b, 重新自旋
+                Object v = n.value;
+                if (v == null) {                 // n is deleted
+                    n.helpDelete(b, f);
+                    break;
+                }
+
+                // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时结束遍历, 重新获取b, 重新自旋
+                if (b.value == null || v == n)      // b is deleted
+                    break;
+
+                // 如果b和n都是正常的结点, 继续遍历数据结点链表
+                b = n;
+                n = f;
+            }
+
+            // 重新获取b, 重新自旋
+            q = head; // restart
+        }
+    }
+}
+
+// 删除并返回最大键的Entry，如果条目为空，则返回 {@code null}。
+public Map.Entry<K,V> pollLastEntry() {
+    // 删除最后一个条目的数据结点以及与之对应的每层的索引结点, 并返回其键和值的快照
+    return doRemoveLastEntry();
+}
+// 删除最后一个条目的数据结点以及与之对应的每层的索引结点, 并返回其键和值的快照
+private Map.Entry<K,V> doRemoveLastEntry() {
+    // 开始自旋
+    for (;;) {
+        // 获取最后一层最后一个索引的数据结点
+        Node<K,V> b = findPredecessorOfLast();
+
+        // b后继n, 如果n为null了, 说明数据结点遍历到尾了, 则继续自旋; 如果b为BASE_HEADER, 则返回null, 表示没有任何数据结点, 删除失败
+        Node<K,V> n = b.next;
+        if (n == null) {
+            if (b.isBaseHeader())               // empty
+                return null;
+            else
+                continue;// all b's successors are deleted; retry
+        }
+
+        // 如果b还有后继, 则继续遍历
+        for (;;) {
+            // 如果n不为b后继了, 则说明b的后继被其他线程更改了, 此时重新自旋, 以获取新的b
+            Node<K,V> f = n.next;
+            if (n != b.next)                    // inconsistent read
+                break;
+
+            // 如果后继n值value为null, 说明n已经被删除了, 则通过标记后继结点辅助删除实例结点, 在实例结点value为null时调用, 删除后结束遍历, 重新获取b, 重新自旋
+            Object v = n.value;
+            if (v == null) {                    // n is deleted
+                n.helpDelete(b, f);
+                break;
+            }
+
+            // 如果key前驱b值为null, 或者n为标记结点, 说明b是要被删除的, 此时结束遍历, 重新获取b, 重新自旋
+            if (b.value == null || v == n)      // b is deleted
+                break;
+
+            // 如果b和n都是正常的结点, 且f不为null, 说明n还有后继, 则继续遍历数据结点链表
+            if (f != null) {
+                b = n;
+                n = f;
+                continue;
+            }
+
+            // 如果b和n都是正常的结点, 但f为null, 说明n为最后一个结点了, 则CAS更新v值为null
+            if (!n.casValue(v, null))
+                // 如果CAS失败, 则结束遍历, 重新获取b, 重新自旋
+                break;
+
+            // 如果CAS删除n结点成功, 则再CAS更新f(即n.next)的next指针指向f自身, 代表使f为标记结点, 如果失败了, 则再CAS更新b.next为f结点
+            K key = n.key;
+            if (!n.appendMarker(f) || !b.casNext(n, f))
+                // 如果CAS更新f后继失败, 且再CAS更新b后继失败, 则清除遍历key沿途看到的任何已删除节点, 包括数据结点和索引结点
+                findNode(key);                  // retry via findNode
+
+            //  如果CAS更新f后继成功, 或者f后继更新失败但b后继更新成功
+            else {                              // clean index
+                // 清除value为null的数据结点的索引结点
+                findPredecessor(key, comparator);
+
+                // 如果head没有索引结点了, 则尝试减少索引层级
+                if (head.right == null)
+                    // 如果head、head.down、head.down.down3层都没有索引结点了(即只剩下HeadIndex时), 则删除head层, 使head指向下一层; 但如果删除后复检时发现原head又多了索引结点, 则又会恢复原状, 取消删除
+                    tryReduceLevel();
+            }
+
+            // 数据结点和索引结点都删除成功后, 则返回n键、n值的快照
+            @SuppressWarnings("unchecked") V vv = (V)v;
+            return new AbstractMap.SimpleImmutableEntry<K,V>(key, vv);
+        }
+    }
+}
+```
+
+###### SubMap实现类
+
+```java
+static final class SubMap<K,V> extends AbstractMap<K,V> implements ConcurrentNavigableMap<K,V>, Cloneable, Serializable {
+    
+    private final ConcurrentSkipListMap<K,V> m;// 底层Map
+    private final K lo;// 下限键，如果从头开始，则为 null
+    private final K hi;// 上限键，如果结束则为空
+    private final boolean loInclusive;// lo 的包含标志
+    private final boolean hiInclusive;// hi 的包含标志
+    private final boolean isDescending;// 方向
+
+    // 延迟初始化的视图持有者
+    private transient KeySet<K> keySetView;
+    private transient Set<Map.Entry<K,V>> entrySetView;
+    private transient Collection<V> valuesView;
+    
+    // 创建一个新的子图，初始化所有字段。
+    SubMap(ConcurrentSkipListMap<K,V> map,
+           K fromKey, boolean fromInclusive,
+           K toKey, boolean toInclusive,
+           boolean isDescending) {
+        Comparator<? super K> cmp = map.comparator;
+        if (fromKey != null && toKey != null && cpr(cmp, fromKey, toKey) > 0)
+            throw new IllegalArgumentException("inconsistent range");
+        this.m = map;
+        this.lo = fromKey;
+        this.hi = toKey;
+        this.loInclusive = fromInclusive;
+        this.hiInclusive = toInclusive;
+        this.isDescending = isDescending;
+    }
+    
+    // 创建子图的实用程序，其中给定的边界覆盖无界（空）的或根据有界的进行检查，subMap、headMap、tailMap方法调用
+    SubMap<K,V> newSubMap(K fromKey, boolean fromInclusive,
+                          K toKey, boolean toInclusive) {
+        Comparator<? super K> cmp = m.comparator;
+        if (isDescending) { // flip senses
+            K tk = fromKey;
+            fromKey = toKey;
+            toKey = tk;
+            boolean ti = fromInclusive;
+            fromInclusive = toInclusive;
+            toInclusive = ti;
+        }
+        if (lo != null) {
+            if (fromKey == null) {
+                fromKey = lo;
+                fromInclusive = loInclusive;
+            }
+            else {
+                int c = cpr(cmp, fromKey, lo);
+                if (c < 0 || (c == 0 && !loInclusive && fromInclusive))
+                    throw new IllegalArgumentException("key out of range");
+            }
+        }
+        if (hi != null) {
+            if (toKey == null) {
+                toKey = hi;
+                toInclusive = hiInclusive;
+            }
+            else {
+                int c = cpr(cmp, toKey, hi);
+                if (c > 0 || (c == 0 && !hiInclusive && toInclusive))
+                    throw new IllegalArgumentException("key out of range");
+            }
+        }
+        return new SubMap<K,V>(m, fromKey, fromInclusive,
+                               toKey, toInclusive, isDescending);
+    }
+    
+    abstract class SubMapIter<T> implements Iterator<T>, Spliterator<T> {
+        Node<K,V> lastReturned;// next() 返回的最后一个节点
+        Node<K,V> next;// 从 next() 返回的下一个节点
+        V nextValue;// 缓存下一个值字段以保持弱一致性
+        
+        public final boolean hasNext() {
+            return next != null;
+        }
+        
+        // 子Map的遍历放啊
+        final void advance() {
+            if (next == null)
+                throw new NoSuchElementException();
+            lastReturned = next;
+            
+            // 如果isDescending为true，则逆序遍历
+            if (isDescending)
+                descend();
+            // 如果isDescending为fasle，则顺序遍历
+            else
+                ascend();
+        }
+
+        // 顺序遍历子Map
+        private void ascend() {
+            Comparator<? super K> cmp = m.comparator;
+            for (;;) {
+                next = next.next;
+                if (next == null)
+                    break;
+                Object x = next.value;
+                if (x != null && x != next) {
+                    if (tooHigh(next.key, cmp))
+                        next = null;
+                    else {
+                        @SuppressWarnings("unchecked") V vv = (V)x;
+                        nextValue = vv;
+                    }
+                    break;
+                }
+            }
+            
+        }
+        
+        // 逆序遍历子Map
+        private void descend() {
+            Comparator<? super K> cmp = m.comparator;
+            for (;;) {
+                // 类似于ConcurrentSkipListMap的findNear，返回小于Key的最大键的Entry，如果没有这样的键，则返回 {@code null}
+                next = m.findNear(lastReturned.key, LT, cmp);
+                if (next == null)
+                    break;
+                Object x = next.value;
+                if (x != null && x != next) {
+                    if (tooLow(next.key, cmp))
+                        next = null;
+                    else {
+                        @SuppressWarnings("unchecked") V vv = (V)x;
+                        nextValue = vv;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+```
+
+###### 获取逆序视图方法
+
+- **descendingMap（）**：返回Map的逆序（降序）视图。
+
+```java
+// 返回Map的逆序（降序）视图
+public ConcurrentNavigableMap<K,V> descendingMap() {
+    ConcurrentNavigableMap<K,V> dm = descendingMap;
+    return (dm != null) ? dm :
+    // 本Map作为底层Map, 没有下限键, 不包含lo, 没有上限键, 不包含hi, 反向
+    (descendingMap = new SubMap<K,V>(this, null, false, null, false, true));
+}
+```
+
+###### 获取中间视图方法
+
+没有指定isDescending，isDescending默认为false，代表所有方法都是**顺序**的。
+
+- **subMap（K，boolean，K，boolean）**：返回Map的中间视图，键从fromKey（不含）到toKey（不含）的
+  部分视图，fromInclusive为true代表包含fromKey，toInclusive为true代表包含toKey。
+- **subMap（K，K）**：返回Map的中间视图，即键从fromKey（fromInclusive含）到toKey（!toInclusive不含）的部分视图，两者相等时返回null(除非fromInclusive与toInclusive都为true)。
+
+```java
+// 返回Map的中间视图，键从fromKey（不含）到toKey（不含）的部分视图，fromInclusive为true代表包含fromKey，toInclusive为true代表包含toKey
+public SubMap<K,V> subMap(K fromKey, boolean fromInclusive,
+                          K toKey, boolean toInclusive) {
+    if (fromKey == null || toKey == null)
+        throw new NullPointerException();
+    
+    // 指定上限键，指定是否包含lo，指定上限键，指定是否包含hi
+    return newSubMap(fromKey, fromInclusive, toKey, toInclusive);
+}
+
+// 返回Map的中间视图，即键从fromKey（fromInclusive含）到toKey（!toInclusive不含）的部分视图，两者相等时返回null(除非fromInclusive与toInclusive都为true)。
+public SubMap<K,V> subMap(K fromKey, K toKey) {
+    // 指定下限键， 包含lo，指定上限键，不包含hi
+    return subMap(fromKey, true, toKey, false);
+}
+```
+
+###### 获取头部视图方法
+
+没有指定isDescending，isDescending默认为false，代表所有方法都是**顺序**的。
+
+- **headMap（K，boolean）**：返回Map的头部视图，即键小于toKey(不含)的部分视图，inclusive为true代表包含toKey。
+- **headMap（K）**：返回Map的头部视图，即键小于toKey(!inclusive不含)的部分视图。
+
+```java
+// 返回Map的头部视图，即键小于toKey(不含)的部分视图，inclusive为true代表包含toKey
+public SubMap<K,V> headMap(K toKey, boolean inclusive) {
+    if (toKey == null)
+        throw new NullPointerException();
+    
+    // 不指定下限键，不包含lo，指定上限键，指定是否包含hi
+    return newSubMap(null, false, toKey, inclusive);
+}
+
+// 返回Map的头部视图，即键小于toKey(!inclusive不含)的部分视图
+public SubMap<K,V> headMap(K toKey) {
+    // 指定上限键，不包含hi
+    return headMap(toKey, false);
+}
+```
+
+###### 获取尾部视图方法
+
+没有指定isDescending，isDescending默认为false，代表所有方法都是**顺序**的。
+
+- **tailMap（K，boolean）**：返回Map的尾部视图，即键大于fromKey（不含）的部分视图，inclusive为true代表包含fromKey。
+- **tailMap（K）**：返回Map的尾部视图，即键大于或者等于fromKey（inclusive含）的部分视图。
+
+```java
+// 返回Map的尾部视图，即键大于fromKey（不含）的部分视图，inclusive为true代表包含fromKey
+public SubMap<K,V> tailMap(K fromKey, boolean inclusive) {
+    if (fromKey == null)
+        throw new NullPointerException();
+    
+    // 指定下限键，指定是否包含lo，不指定上限键，不包含hi
+    return newSubMap(fromKey, inclusive, null, false);
+}
+
+// 返回Map的尾部视图，即键大于或者等于fromKey（inclusive含）的部分视图
+public SubMap<K,V> tailMap(K fromKey) {
+    // 指定下限键，包含lo
+    return tailMap(fromKey, true);
 }
 ```
 
