@@ -8515,3 +8515,591 @@ public SubMap<K,V> tailMap(K fromKey) {
 }
 ```
 
+#### JDK7 HashMap
+
+![1624883193030](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1624883193030.png)
+
+##### 特点
+
+- JDK7 HashMap，JDK1.7中基于哈希表的Map接口实现，提供所有可选的映射操作，**允许null值和null键，但不保证映射的顺序**。
+- 假设散列函数在存储桶中正确分散元素，get 和 put提供恒定时间性能，即O（1）。 迭代集合视图需要的时间与 HashMap 实例的**“容量”（桶的数量）**加上**它的大小（键值映射的数量）**成正比。 因此，如果迭代性能很重要，则不要将初始容量设置得太高或负载因子太低（会导致大容量），这一点非常重要。
+- 两个影响性能的参数：
+  - **初始容量**：当前容量指哈希表中的桶数，而初始容量指哈希表创建时的容量。
+  - **负载因子**：是衡量哈希表在其容量自动增加之前允许达到多满的指标，当 **哈希表中的条目数 > 负载因子 * 当前容量**时，重新哈希表（即重建内部数据结构），使哈希表具有大约两倍的桶数。
+- 作为一般规则，**默认负载因子 (0.75)** 在时间和空间成本之间提供了很好的权衡。 较高的值会减少空间开销，但会增加查找成本（反映在 HashMap 类的大多数操作中，包括get 和put）。
+  - 因此，在设置其初始容量时，应考虑映射中的**预期条目数及其负载因子**，以尽量减少重新哈希操作的次数。 
+  - 而如果要在一个HashMap实例中存储许多映射，则创建具有足够大容量的映射将允许更有效地存储映射，而不是让它根据需要执行自动重新散列以增加表。
+  - 其中要注意的是，如果初始容量大于最大条目数除以负载因子，则不会发生重新哈希操作。
+- **HashMap是非同步的**，在多个线程并发访问时，通常是通过同步一些自然封装映射的对象来完成，比如
+  Collections.synchronizedMap。
+- **HashMap的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。
+
+##### 构造方法
+
+- **空参的构造方法**：构造一个具有默认初始容量 (16) 和默认负载因子 (0.75) 的空 HashMap。
+- **指定初始容量的构造方法**：构造一个具有指定初始容量和默认负载因子 (0.75) 的空 HashMap。
+- **指定初始容量和负载因子的构造方法**：构造一个具有指定初始容量和负载因子的空HashMap。
+- **指定复制集合的构造方法**：构造一个与指定Map具有相同映射关系的新HashMap。HashMap是使用默认负载因子(0.75)和足以在指定Map中保存映射的初始容量创建的。
+
+```java
+public class HashMap<K,V> extends AbstractMap<K,V> implements Map<K,V>, Cloneable, Serializable
+{
+	static final int DEFAULT_INITIAL_CAPACITY = 1 << 4;// 默认容量
+	static final int MAXIMUM_CAPACITY = 1 << 30;// 最大容量
+	static final float DEFAULT_LOAD_FACTOR = 0.75f;// 默认负载因子
+	static final Entry<?,?>[] EMPTY_TABLE = {};// 空散列表
+	transient Entry<K,V>[] table = (Entry<K,V>[]) EMPTY_TABLE;// 散列表
+	transient int size;// 实际大小
+	
+	// 阈值：即要下一个容量值=当前容量（散列表实际大小）*负载因子，如果table==EMPTY_TABLE，则在膨胀时用作新建表的初始容量
+	int threshold;
+	
+	final float loadFactor;// 负载因子
+	transient int modCount;// 修改模数
+	
+	// 替代哈希阈值默认值
+	static final int ALTERNATIVE_HASHING_THRESHOLD_DEFAULT = Integer.MAX_VALUE;
+	
+	// 哈希种子, 应用于键的哈希码，使哈希冲突更难找到。如果为 0，则禁用替代散列
+	transient int hashSeed = 0;
+
+	// HashMap元素结点
+    static class Entry<K,V> implements Map.Entry<K,V> {
+        final K key;
+        V value;
+        Entry<K,V> next;
+        int hash;
+        
+        Entry(int h, K k, V v, Entry<K,V> n) {
+            value = v;
+            next = n;
+            key = k;
+            hash = h;
+        }
+    }
+    
+    // 构造一个具有默认初始容量 (16) 和默认负载因子 (0.75) 的空 HashMap。
+    public HashMap() {
+        this(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+    }
+    
+    // 构造一个具有指定初始容量和默认负载因子 (0.75) 的空 HashMap。
+    public HashMap(int initialCapacity) {
+        this(initialCapacity, DEFAULT_LOAD_FACTOR);
+    }
+    
+    // 构造一个具有指定初始容量和负载因子的空HashMap。
+    public HashMap(int initialCapacity, float loadFactor) {
+        if (initialCapacity < 0)
+            throw new IllegalArgumentException("Illegal initial capacity: " +
+                                               initialCapacity);
+        if (initialCapacity > MAXIMUM_CAPACITY)
+            initialCapacity = MAXIMUM_CAPACITY;
+        if (loadFactor <= 0 || Float.isNaN(loadFactor))
+            throw new IllegalArgumentException("Illegal load factor: " +
+                                               loadFactor);
+
+        this.loadFactor = loadFactor;
+        threshold = initialCapacity;
+        init();
+    }
+    
+    // LinkedHashMap初始化钩子, 在初始化HashMap之后但在插入任何条目之前调用
+    void init() {
+    }
+    
+    // 构造一个与指定Map具有相同映射关系的新HashMap。 HashMap 是使用默认负载因子(0.75)和足以在指定Map中保存映射的初始容量创建的。
+    public HashMap(Map<? extends K, ? extends V> m) {
+        // 使用默认容量16或者根据复制集合大小计算的容量, 以及默认负载因子0.75构造HashMap, 其中由于table=[], 所以使用指定的容量作为阈值
+        this(Math.max((int) (m.size() / DEFAULT_LOAD_FACTOR) + 1,
+                      DEFAULT_INITIAL_CAPACITY), DEFAULT_LOAD_FACTOR);
+
+        // 根据指定容量初始化散列表(只在散列表为空时调用)，根据规范化后的容量计算新阈值以及构造新容量的散列表
+        inflateTable(threshold);
+        
+        // 添加复制集合所有元素, 但不会调整散列表的大小
+        putAllForCreate(m);
+    }
+    // 添加复制集合所有元素, 但不会调整散列表的大小
+    private void putAllForCreate(Map<? extends K, ? extends V> m) {
+        for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+            // 添加指定key、value元素, 但不会调整散列表的大小
+            putForCreate(e.getKey(), e.getValue());
+    }
+    // 添加指定key、value元素, 但不会调整散列表的大小
+    private void putForCreate(K key, V value) {
+        int hash = null == key ? 0 : hash(key);
+        int i = indexFor(hash, table.length);
+
+        for (Entry<K,V> e = table[i]; e != null; e = e.next) {
+            Object k;
+            if (e.hash == hash &&
+                ((k = e.key) == key || (key != null && key.equals(k)))) {
+                e.value = value;
+                return;
+            }
+        }
+
+        // 使用hash值以及哈希索引, 在散列表中创建条目, 不会调整散列表大小
+        createEntry(hash, key, value, i);
+    }
+}
+```
+
+##### 初始化散列表方法
+
+- **inflateTable（int）**：根据指定容量初始化散列表(只在散列表为空时调用)，根据规范化后的容量计算新阈值以及构造新容量的散列表。
+
+```java
+// 根据指定容量初始化散列表(只在散列表为空时调用)，根据规范化后的容量计算新阈值以及构造新容量的散列表
+private void inflateTable(int toSize) {
+    // 返回给定目标容量的2的幂次, 规范化容量: 取2的(number - 1) <<< 1最高位幂次容量
+    int capacity = roundUpToPowerOf2(toSize);
+
+    // 根据规范化后的容量计算新阈值
+    threshold = (int) Math.min(capacity * loadFactor, MAXIMUM_CAPACITY + 1);
+
+    // 构造新容量的散列表
+    table = new Entry[capacity];
+
+    // 初始化哈希种子, 会推迟初始化, 直到指定的容量大于哈希种子阈值
+    initHashSeedAsNeeded(capacity);
+}
+```
+
+##### 迭代方法
+
+- **抽象的HashMap.HashIterator迭代器**：HashMap的迭代器基类，快速失败机制，遍历next指针，返回
+  HashMap.Entry对象。
+- **Map.Entry迭代器**：继承HashMap的迭代器基类，快速失败机制，遍历next指针，返回Map.Entry对象。
+- **HashMap.Entry#Key迭代器**：继承HashMap的迭代器基类，快速失败机制，遍历next指针，返回
+  HashMap.Entry#Key对象。
+- **HashMap.Entry#Value迭代器**：继承HashMap的迭代器基类，快速失败机制，遍历next指针，返回
+  HashMap.Entry#Value对象。
+
+```java
+// 抽象的HashMap.HashIterator迭代器：HashMap的迭代器基类，快速失败机制，遍历next指针，返回HashMap.Entry对象。
+private abstract class HashIterator<E> implements Iterator<E> {
+    Entry<K,V> next;        // 下一个返回的条目
+    int expectedModCount;   // 对于快速失败
+    int index;              // 当前插槽
+    Entry<K,V> current;     // 当前条目
+
+    HashIterator() {
+        expectedModCount = modCount;
+        // 初始化next指针
+        if (size > 0) { // advance to first entry
+            Entry[] t = table;
+            while (index < t.length && (next = t[index++]) == null);
+        }
+    }
+
+    public final boolean hasNext() {
+        return next != null;
+    }
+
+    // 向前遍历链表、散列表
+    final Entry<K,V> nextEntry() {
+        if (modCount != expectedModCount)
+            throw new ConcurrentModificationException();
+        Entry<K,V> e = next;
+        if (e == null)
+            throw new NoSuchElementException();
+
+        // 遍历链表
+        if ((next = e.next) == null) {
+            Entry[] t = table;
+            // 遍历散列表
+            while (index < t.length && (next = t[index++]) == null);
+        }
+        current = e;
+        return e;
+    }
+}
+
+// Map.Entry迭代器：继承HashMap的迭代器基类，快速失败机制，遍历next指针，返回Map.Entry对象。
+private final class EntryIterator extends HashIterator<Map.Entry<K,V>> {
+    public Map.Entry<K,V> next() {
+        return nextEntry();
+    }
+}
+
+// HashMap.Entry#Key迭代器：继承HashMap的迭代器基类，快速失败机制，遍历next指针，返回HashMap.Entry#Key对象。
+private final class KeyIterator extends HashIterator<K> {
+    public K next() {
+        return nextEntry().getKey();
+    }
+}
+
+// HashMap.Entry#Value迭代器：继承HashMap的迭代器基类，快速失败机制，遍历next指针，返回HashMap.Entry#Value对象。
+private final class ValueIterator extends HashIterator<V> {
+    public V next() {
+        return nextEntry().value;
+    }
+}
+```
+
+##### HashCode扰动函数
+
+- **hash（Object）**：HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响。
+
+```java
+// HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+final int hash(Object k) {
+    int h = hashSeed;
+
+    // 如果k为String类型, 则返回k的32位哈希值
+    if (0 != h && k instanceof String) {
+        return sun.misc.Hashing.stringHash32((String) k);
+    }
+
+    // 如果k不为String类型, 则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    h ^= k.hashCode();
+    h ^= (h >>> 20) ^ (h >>> 12);
+    return h ^ (h >>> 7) ^ (h >>> 4);
+}
+```
+
+##### 计算哈希索引方法
+
+- **indexFor（int，int）**：返回哈希码h的索引。其实现是利用**（n - 1） & hash**，相当于hash % n，n指散列表的当前容量（桶数量），hash指获取hash（key）即key的hashCode扰动后结果。
+  - **不能直接使用HashCode作为索引的原因**：int类型的hashCode，范围为[-2^32，2^32 - 1]，如果散列表
+    数组与HashCode一一对应，**需要40亿的空间（int[40亿]），明显这在内存是放不下的**，也就是说明
+    hashCode是不能直接作为数组索引的。因此，如果使用hashCode对散列表数组长度取模，那么就可以解决这个问题，从而保证较小的数组也还能利用上hashCode。
+  - **n为2的幂次原因**：为了解决hashCode对散列表数组长度取模，设计了HashCode的扰动函数以及为2幂次的容量n，可以通过n-1来获得取模操作的低位掩码，此时只需要通过低位掩码与扰动后的
+    **hashCode（hash值）进行一次与运算**，即可得到该hash值在散列表数组中的索引。其次通过在扩容方
+    法中，经过hash值与低位掩码相与，可以保证扩容后，**只会移动少部分相与结果高位为1的桶链表**，其他
+    保持不变，减少了扩容时的时间。
+
+```java
+// 返回哈希码h的索引
+static int indexFor(int h, int length) {
+    return h & (length-1);
+}
+```
+
+##### 规范容量计算方法
+
+- **roundUpToPowerOf2（int）**：返回给定目标容量的2的幂次，规范化容量，取2的(number - 1) <<< 1最高位幂次容量。
+
+```java
+// 返回给定目标容量的2的幂次, 规范化容量: 取2的(number - 1) <<< 1最高位幂次容量
+private static int roundUpToPowerOf2(int number) {
+    return number >= MAXIMUM_CAPACITY
+        ? MAXIMUM_CAPACITY
+        // 返回最高位为1其他位补0的数值
+        : (number > 1) ? Integer.highestOneBit((number - 1) << 1) : 1;
+}
+```
+
+##### 初始化哈希种子
+
+- **initHashSeedAsNeeded（int）**：
+  - 初始化哈希种子，会推迟初始化，直到指定的容量大于哈希种子阈值，返回值用作判断是否重新hash的依据。
+  - 被初始化散列表inflateTable（int）方法和扩容方法resize（int）调用，用于初始化哈希种子，或者转移结点前判断是否需要**重新计算桶的hash值**。
+
+```java
+// 初始化哈希种子, 会推迟初始化, 直到指定的容量大于哈希种子阈值, 返回值用作判断是否重新hash的依据
+final boolean initHashSeedAsNeeded(int capacity) {
+    // 当前是否存在哈希种子
+    boolean currentAltHashing = hashSeed != 0;
+
+    // 如果JVM在运行, 且指定的容量大于哈希种子阈值, 则代表需要使用哈希种子
+    boolean useAltHashing = sun.misc.VM.isBooted() && (capacity >= Holder.ALTERNATIVE_HASHING_THRESHOLD);
+
+    // 如果存在哈希种子, 且当前使用的哈希种子不为同一个, 则代表需要切换哈希种子
+    boolean switching = currentAltHashing ^ useAltHashing;
+    if (switching) {
+        // 返回一个非零的32位伪随机值, 其中当前HashMap实例用作值的一部分, 构造新的哈希种子作为掩码
+        hashSeed = useAltHashing ? sun.misc.Hashing.randomHashSeed(this) : 0;
+    }
+
+    // 返回是否切换了哈希种子
+    return switching;
+}
+```
+
+##### 扩容方法
+
+- **resize（int）**：根据指定容量扩容散列表(当实际大小超过阈值时调用), 使用头插法将当前表中的所有条目传输到newTable, 会重新计算每个结点的hash值以及新的阈值。
+
+```java
+// 根据指定容量扩容散列表(当实际大小超过阈值时调用), 使用头插法将当前表中的所有条目传输到newTable, 会重新计算每个结点的hash值以及新的阈值
+void resize(int newCapacity) {
+    Entry[] oldTable = table;
+    int oldCapacity = oldTable.length;
+    if (oldCapacity == MAXIMUM_CAPACITY) {
+        threshold = Integer.MAX_VALUE;
+        return;
+    }
+
+    Entry[] newTable = new Entry[newCapacity];
+
+    // 使用头插法将当前表中的所有条目传输到newTable, 可能会重新计算hash值
+    transfer(newTable,
+             // 初始化哈希种子, 会推迟初始化, 直到指定的容量大于哈希种子阈值, 返回值用作判断是否重新hash的依据
+             initHashSeedAsNeeded(newCapacity));
+
+    table = newTable;
+    threshold = (int)Math.min(newCapacity * loadFactor, MAXIMUM_CAPACITY + 1);
+}
+
+// 使用头插法将当前表中的所有条目传输到newTable, 可能会重新计算hash值
+void transfer(Entry[] newTable, boolean rehash) {
+    int newCapacity = newTable.length;
+
+    // 遍历散列表, 当前遍历到的桶e
+    for (Entry<K,V> e : table) {
+
+        // 遍历e链表, 如果哈希种子有变化, 则重新每个e结点的hash值, 重新计算哈希索引i, 并设置到新散列表i桶中
+        while(null != e) {
+            Entry<K,V> next = e.next;
+            if (rehash) {
+                e.hash = null == e.key ? 0 : hash(e.key);
+            }
+            int i = indexFor(e.hash, newCapacity);
+
+            // 头插法
+            e.next = newTable[i];
+            newTable[i] = e;
+
+            // 继续遍历e链表
+            e = next;
+        }
+    }
+}
+```
+
+##### 添加元素方法
+
+- **put（K，V）**：将指定值与此映射中的指定键相关联, 如果映射先前包含键的映射，则旧值将被替换。
+- **putAll（Map）**：添加复制集合的的所有键值对。
+
+```java
+// 将指定值与此映射中的指定键相关联, 如果映射先前包含键的映射，则旧值将被替换
+public V put(K key, V value) {
+    // 如果散列表为空, 则根据指定容量初始化散列表(只在散列表表为空时调用)，根据规范化后的容量计算新阈值以及构造新容量的散列表
+    if (table == EMPTY_TABLE) {
+        inflateTable(threshold);
+    }
+
+    // 如果key为null, 则将null键、value值添加到第1个桶, 其中底层会调整散列表大小
+    if (key == null)
+        return putForNullKey(value);
+
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = hash(key);
+
+    // 返回哈希码 h 的索引
+    int i = indexFor(hash, table.length);
+
+    // 从i桶开始遍历链表, 当前遍历结点e, e键k
+    for (Entry<K,V> e = table[i]; e != null; e = e.next) {
+        Object k;
+
+        // 如果e的hash值等于key的hash值, 且e键等于key或者e键equalskey, 说明e结点就是要找的结点, 则替换e值并返回旧值
+        if (e.hash == hash && ((k = e.key) == key || key.equals(k))) {
+            V oldValue = e.value;
+            e.value = value;
+            e.recordAccess(this);// LinkedHashMap值覆盖回调方法
+
+            // 替换成功, 返回旧值
+            return oldValue;
+        }
+    }
+
+    modCount++;
+
+    // 将具有指定键、值和哈希码的新条目添加到指定存储桶， 其中此方法会负责调整散列表大小
+    addEntry(hash, key, value, i);
+
+    // 添加成功, 返回null
+    return null;
+}
+// 将null键、value值添加到第1个桶, 其中底层会调整散列表大小
+private V putForNullKey(V value) {
+    // 从第1个桶开始遍历链表, 当前遍历结点e
+    for (Entry<K,V> e = table[0]; e != null; e = e.next) {
+        // 如果e键确实为null, 说明e结点就是要找的结点, 则替换e值并返回旧值
+        if (e.key == null) {
+            V oldValue = e.value;
+            e.value = value;
+            e.recordAccess(this);// LinkedHashMap值覆盖回调方法
+
+            // 替换成功, 返回旧值
+            return oldValue;
+        }
+    }
+    modCount++;
+
+    // 将null键、value值添加到第1个桶， 其中此方法会负责调整散列表大小
+    addEntry(0, null, value, 0);
+
+    // 添加成功, 返回null
+    return null;
+}
+// 将具有指定键、值和哈希码的新条目添加到指定存储桶， 其中此方法会负责调整散列表大小
+void addEntry(int hash, K key, V value, int bucketIndex) {
+    // 如果实例大小大于当前阈值, 且bucketIndex桶结点不为null, 说明HashMap需要扩容了
+    if ((size >= threshold) && (null != table[bucketIndex])) {
+        // 根据指定容量扩容散列表(当实际大小超过阈值时调用), 使用头插法将当前表中的所有条目传输到newTable, 会重新计算每个结点的hash值以及新的阈值
+        resize(2 * table.length);
+
+        // 重新计算hash值, 以及哈希索引
+        hash = (null != key) ? hash(key) : 0;
+        bucketIndex = indexFor(hash, table.length);
+    }
+
+    // 添加复制集合所有元素, 但不会调整散列表的大小
+    createEntry(hash, key, value, bucketIndex);
+}
+// 使用hash值以及哈希索引, 在散列表中创建条目, 不会调整散列表大小
+void createEntry(int hash, K key, V value, int bucketIndex) {
+    Entry<K,V> e = table[bucketIndex];
+    table[bucketIndex] = new Entry<>(hash, key, value, e);
+    size++;
+}
+
+// 添加复制集合的的所有键值对
+public void putAll(Map<? extends K, ? extends V> m) {
+    int numKeysToBeAdded = m.size();
+    if (numKeysToBeAdded == 0)
+        return;
+
+    // 如果散列表为空, 则根据计算出来的阈值初始化散列表(只在散列表表为空时调用)，根据规范化后的容量计算新阈值以及构造新容量的散列表
+    if (table == EMPTY_TABLE) {
+        inflateTable((int) Math.max(numKeysToBeAdded * loadFactor, threshold));
+    }
+
+    // 如果复制集合的大小大于当前阈值, 则先计算新的容量(最接近targetCapacity的2^n), 而targetCapacity=复制集合实际大小 * 负载因子
+    if (numKeysToBeAdded > threshold) {
+        int targetCapacity = (int)(numKeysToBeAdded / loadFactor + 1);
+        if (targetCapacity > MAXIMUM_CAPACITY)
+            targetCapacity = MAXIMUM_CAPACITY;
+
+        // 扩容到接近当前容量的2^
+        int newCapacity = table.length;
+        while (newCapacity < targetCapacity)
+            newCapacity <<= 1;
+
+        // 根据指定容量扩容散列表(当实际大小超过阈值时调用), 使用头插法将当前表中的所有条目传输到newTable, 会重新计算每个结点的hash值以及新的阈值
+        if (newCapacity > table.length)
+            resize(newCapacity);
+    }
+
+    // 遍历指定复制集合所有的条目, 并添加到WeakHashMap的散列表中
+    for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+        put(e.getKey(), e.getValue());
+}
+```
+
+##### 删除元素方法
+
+- **remove（Object）**：如果存在指定的键，则从此映射中删除指定键的映射。
+
+```java
+// 如果存在指定的键，则从此映射中删除指定键的映射
+public V remove(Object key) {
+    // 移除并返回与HashMap中指定键关联的条目, 如果HashMap不包含此键的映射, 则返回 null
+    Entry<K,V> e = removeEntryForKey(key);
+    return (e == null ? null : e.value);
+}
+// 移除并返回与HashMap中指定键关联的条目, 如果HashMap不包含此键的映射, 则返回 null
+final Entry<K,V> removeEntryForKey(Object key) {
+    if (size == 0) {
+        return null;
+    }
+
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = (key == null) ? 0 : hash(key);
+
+    // 返回哈希码h的索引i, 获取i桶结点e、前驱prev(初始时为e)
+    int i = indexFor(hash, table.length);
+    Entry<K,V> prev = table[i];
+    Entry<K,V> e = prev;
+
+    // 遍历e链表, 后继next, e键k
+    while (e != null) {
+        Entry<K,V> next = e.next;
+        Object k;
+
+        // 如果e的hash值等于key的hash值, 且e键等于key或者e键equals key, 则说明找到了结点e
+        if (e.hash == hash && ((k = e.key) == key || (key != null && key.equals(k)))) {
+            modCount++;
+            size--;
+
+            // 如果prev等于e, 说明要删除的结点正好为桶头结点, 则替换next为新的桶头
+            if (prev == e)
+                table[i] = next;
+            // 如果prev不等于e, 说明要删除的结点不为桶头结点, 则脱钩e结点
+            else
+                prev.next = next;
+
+            // LinkedHashMap结点删除回调方法
+            e.recordRemoval(this);
+
+            // 删除成功, 则返回e结点
+            return e;
+        }
+
+        // 如果还没找到要删除的结点e, 则继续遍历e链表
+        prev = e;
+        e = next;
+    }
+
+    // 如果最后还没找到e结点, 则返回null
+    return e;
+}
+```
+
+##### 获取元素方法
+
+- **get（Object）**：返回指定键映射到的值，如果此映射不包含键的映射，则返回 {@code null}。
+
+```java
+// 返回指定键映射到的值，如果此映射不包含键的映射，则返回 {@code null}
+public V get(Object key) {
+    // 如果key为null, 则从第1个桶结点获取null键以及对应的value值, 第1个桶结点e, 如果e键为null, 则返回e值, 否则返回null
+    if (key == null)
+        return getForNullKey();
+
+    // 如果key不为null, 返回与 HashMap 中指定键关联的条目。 如果 HashMap 不包含键的映射，则返回 null
+    Entry<K,V> entry = getEntry(key);
+    return null == entry ? null : entry.getValue();
+}
+// 从第1个桶结点获取null键以及对应的value值, 第1个桶结点e, 如果e键为null, 则返回e值, 否则返回null
+private V getForNullKey() {
+    if (size == 0) {
+        return null;
+    }
+
+    // 第1个桶结点e, 如果e键为null, 则返回e值, 否则返回null
+    for (Entry<K,V> e = table[0]; e != null; e = e.next) {
+        if (e.key == null)
+            return e.value;
+    }
+    return null;
+}
+// 返回与 HashMap 中指定键关联的条目。 如果 HashMap 不包含键的映射，则返回 null。
+final Entry<K,V> getEntry(Object key) {
+    if (size == 0) {
+        return null;
+    }
+
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = (key == null) ? 0 : hash(key);
+
+    // 返回哈希码 h 的索引, 获取该索引所在的桶结点e, 遍历e链表
+    for (Entry<K,V> e = table[indexFor(hash, table.length)]; e != null; e = e.next) {
+        Object k;
+
+        // 如果e的hash等于key的hash值, 且e键等于key或者e键equals key, 说明e就是要找的结点, 则返回e结点即可
+        if (e.hash == hash && ((k = e.key) == key || (key != null && key.equals(k))))
+            return e;
+    }
+
+    // 如果确实找不到e结点, 则返回null
+    return null;
+}
+```
+
