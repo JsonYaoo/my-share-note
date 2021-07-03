@@ -297,7 +297,9 @@ public class HashMap<K,V> extends AbstractMap<K,V> implements Map<K,V>, Cloneabl
     transient Set<Map.Entry<K,V>> entrySet;
     transient int size;
     transient int modCount;
-    int threshold;// 阈值：即要下一个容量值 = 当前容量（散列表实际大小） * 负载因子
+    
+    // 阈值：即要下一个容量值=当前容量（散列表实际大小）*负载因子，如果table==空表时，则在初始化散列表时，用作新建表的初始容量
+    int threshold;
     final float loadFactor;// 负载因子
     
     // HashMap#Node，实现Map#Entry，以实现Entry#getKey | getValue等方法
@@ -411,11 +413,11 @@ final class ValueIterator extends HashIterator implements Iterator<V> {
   - 使用高位异或，可以减少低位冲突的可能性，保证散列表的质量。
 
 ```java
-    // HashCode扰动函数
-    static final int hash(Object key) {
-        int h;
-        return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
-    }
+// HashCode扰动函数
+static final int hash(Object key) {
+    int h;
+    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+}
 ```
 
 ##### 计算哈希索引方法
@@ -4672,31 +4674,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V> implements Concurre
     private static final long ABASE;// Node[].class
     // 31 - Integer.numberOfLeadingZeros(U.arrayIndexScale(Node[].class));
     private static final int ASHIFT;// 用于确定在Node[i]的值
-    static {
-        try {
-            U = sun.misc.Unsafe.getUnsafe();
-            Class<?> k = ConcurrentHashMap.class;
-            SIZECTL = U.objectFieldOffset
-                (k.getDeclaredField("sizeCtl"));
-            TRANSFERINDEX = U.objectFieldOffset
-                (k.getDeclaredField("transferIndex"));
-            BASECOUNT = U.objectFieldOffset
-                (k.getDeclaredField("baseCount"));
-            CELLSBUSY = U.objectFieldOffset
-                (k.getDeclaredField("cellsBusy"));
-            Class<?> ck = CounterCell.class;
-            CELLVALUE = U.objectFieldOffset
-                (ck.getDeclaredField("value"));
-            Class<?> ak = Node[].class;
-            ABASE = U.arrayBaseOffset(ak);
-            int scale = U.arrayIndexScale(ak);
-            if ((scale & (scale - 1)) != 0)
-                throw new Error("data type scale not a power of two");
-            ASHIFT = 31 - Integer.numberOfLeadingZeros(scale);
-        } catch (Exception e) {
-            throw new Error(e);
-        }
-    }
+    ...
     
     transient volatile Node<K,V>[] table;
     private transient volatile Node<K,V>[] nextTable;
@@ -4993,7 +4971,6 @@ private static final int tableSizeFor(int c) {
     n |= n >>> 16;
     return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
 }
-
 ```
 
 ##### 扩容方法
@@ -8551,16 +8528,16 @@ public class HashMap<K,V> extends AbstractMap<K,V> implements Map<K,V>, Cloneabl
 	transient Entry<K,V>[] table = (Entry<K,V>[]) EMPTY_TABLE;// 散列表
 	transient int size;// 实际大小
 	
-	// 阈值：即要下一个容量值=当前容量（散列表实际大小）*负载因子，如果table==EMPTY_TABLE，则在膨胀时用作新建表的初始容量
+	// 阈值：即要下一个容量值=当前容量（散列表实际大小）*负载因子，如果table==EMPTY_TABLE，则在初始化散列表时，用作新建表的初始容量
 	int threshold;
 	
 	final float loadFactor;// 负载因子
 	transient int modCount;// 修改模数
 	
-	// 替代哈希阈值默认值
+	// 哈希种子阈值的默认值
 	static final int ALTERNATIVE_HASHING_THRESHOLD_DEFAULT = Integer.MAX_VALUE;
 	
-	// 哈希种子, 应用于键的哈希码，使哈希冲突更难找到。如果为 0，则禁用替代散列
+	// 哈希种子可以让哈希算法更复杂一点，从而减少哈希碰撞的概率，如果为0代表哈希种子不生效
 	transient int hashSeed = 0;
 
 	// HashMap元素结点
@@ -8662,7 +8639,7 @@ private void inflateTable(int toSize) {
     // 构造新容量的散列表
     table = new Entry[capacity];
 
-    // 初始化哈希种子, 会推迟初始化, 直到指定的容量大于哈希种子阈值
+    // 生成/切换哈希种子(会推迟初始化, 默认为0, 代表不生效), 直到指定的容量大于哈希种子阈值(可通过改变JVM参数提前触发更换时机), 返回值用作判断是否重新hash的依据(因为返回true代表了更换了哈希算法), 一般为false
     initHashSeedAsNeeded(capacity);
 }
 ```
@@ -8746,6 +8723,7 @@ private final class ValueIterator extends HashIterator<V> {
 ```java
 // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
 final int hash(Object k) {
+    // 哈希种子可以让哈希算法更复杂一点，从而减少哈希碰撞的概率，如果为0代表哈希种子不生效
     int h = hashSeed;
 
     // 如果k为String类型, 则返回k的32位哈希值
@@ -8754,7 +8732,10 @@ final int hash(Object k) {
     }
 
     // 如果k不为String类型, 则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    // 如果h为默认0, 则h异或k的散列表码, 还是会等于k的散列码
     h ^= k.hashCode();
+    
+    // 确保在每个位位置仅相差常数倍的hashCode，从而具有有限数量的冲突（在默认加载因子下约为8）=>把高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
     h ^= (h >>> 20) ^ (h >>> 12);
     return h ^ (h >>> 7) ^ (h >>> 4);
 }
@@ -8773,9 +8754,10 @@ final int hash(Object k) {
 
 ```java
 // 返回哈希码h的索引
-static int indexFor(int h, int length) {
-    return h & (length-1);
-}
+    static int indexFor(int h, int length) {
+        // 如果n为2的幂次数, 则n-1可以得到散列表容量n的掩码, 0~n-1表示散列表的下标范围, h & (n-1)相当于h % n, 因此这就是n为2的幂次的原因1, 因此与操作比取与操作快
+        return h & (length-1);
+    }
 ```
 
 ##### 规范容量计算方法
@@ -8790,31 +8772,94 @@ private static int roundUpToPowerOf2(int number) {
         // 返回最高位为1其他位补0的数值
         : (number > 1) ? Integer.highestOneBit((number - 1) << 1) : 1;
 }
+
+// Integer方法，返回最高位为1其他位补0的数值
+public static int highestOneBit(int i) {
+    // HD, Figure 3-1
+    // 右移1位, 让最高位后(含)2位为1, 移出去的不管
+    i |= (i >>  1);
+
+    // 右移2位, 让最高位后(含)4位为1, 移出去的不管
+    i |= (i >>  2);
+
+    // 右移4位, 让最高位后(含)8位为1, 移出去的不管
+    i |= (i >>  4);
+
+    // 右移8位, 让最高位后(含)16位为1, 移出去的不管
+    i |= (i >>  8);
+
+    // 右移16位, 让最高位后(含)32位为1, 移出去的不管
+    i |= (i >> 16);
+
+    // 最后 - 再右移1位的结果, 得到最高位为1的数值
+    return i - (i >>> 1);
+}
 ```
 
 ##### 初始化哈希种子
 
 - **initHashSeedAsNeeded（int）**：
-  - 初始化哈希种子，会推迟初始化，直到指定的容量大于哈希种子阈值，返回值用作判断是否重新hash的依据。
+  - **生成/切换哈希种子**(会推迟初始化, 默认为0, 代表不生效), 直到指定的容量大于**哈希种子阈值(可通过改变JVM参数提前触发更换时机)**, 返回值用作判断是否重新hash的依据(因为返回true代表了更换了哈希算法), 一般为false。
   - 被初始化散列表inflateTable（int）方法和扩容方法resize（int）调用，用于初始化哈希种子，或者转移结点前判断是否需要**重新计算桶的hash值**。
 
 ```java
-// 初始化哈希种子, 会推迟初始化, 直到指定的容量大于哈希种子阈值, 返回值用作判断是否重新hash的依据
+// 哈希种子阈值的默认值
+static final int ALTERNATIVE_HASHING_THRESHOLD_DEFAULT = Integer.MAX_VALUE;
+
+// 哈希种子可以让哈希算法更复杂一点，从而减少哈希碰撞的概率，如果为0代表哈希种子不生效
+transient int hashSeed = 0;
+
+// Holder保存直到JVM启动后才能初始化的值。
+private static class Holder {
+    // 哈希种子阈值, 默认为Integer.MAX_VALUE, 或者为-Djdk.map.althashing.threshold指定的值
+    static final int ALTERNATIVE_HASHING_THRESHOLD;
+
+    static {
+        // 取当前虚拟机的环境变量阈值-Djdk.map.althashing.threshold
+        String altThreshold = java.security.AccessController.doPrivileged(
+            new sun.security.action.GetPropertyAction(
+                "jdk.map.althashing.threshold"));
+
+        // 如果指定了-Djdk.map.althashing.threshold, 则threshold为指定的阈值, 否则threshold为Integer.MAX_VALUE
+        int threshold;
+        try {
+            threshold = (null != altThreshold)
+                ? Integer.parseInt(altThreshold)
+                : ALTERNATIVE_HASHING_THRESHOLD_DEFAULT;
+
+            // disable alternative hashing if -1
+            if (threshold == -1) {
+                threshold = Integer.MAX_VALUE;
+            }
+
+            if (threshold < 0) {
+                throw new IllegalArgumentException("value must be positive integer.");
+            }
+        } catch(IllegalArgumentException failed) {
+            throw new Error("Illegal value for 'jdk.map.althashing.threshold'", failed);
+        }
+
+        // 最后更新ALTERNATIVE_HASHING_THRESHOLD为threshold, 默认为Integer.MAX_VALUE
+        ALTERNATIVE_HASHING_THRESHOLD = threshold;
+    }
+}
+
+// 生成/切换哈希种子(会推迟初始化, 默认为0, 代表不生效), 直到指定的容量大于哈希种子阈值(可通过改变JVM参数提前触发更换时机), 返回值用作判断是否重新hash的依据(因为返回true代表了更换了哈希算法), 一般为false
 final boolean initHashSeedAsNeeded(int capacity) {
-    // 当前是否存在哈希种子
+    // 当前是否存在哈希种子，默认为0 => 即currentAltHashing默认为0
     boolean currentAltHashing = hashSeed != 0;
 
-    // 如果JVM在运行, 且指定的容量大于哈希种子阈值, 则代表需要使用哈希种子
+    // 如果JVM在运行, 且指定的容量大于哈希种子阈值, 说明认为当前哈希算法不太均匀, 则需要生成/切换哈希种子, 从而更换哈希算法
     boolean useAltHashing = sun.misc.VM.isBooted() && (capacity >= Holder.ALTERNATIVE_HASHING_THRESHOLD);
 
-    // 如果存在哈希种子, 且当前使用的哈希种子不为同一个, 则代表需要切换哈希种子
+    // 如果currentAltHashing与useAltHashing不相等, 则返回true, 代表需要生成/切换哈希种子
     boolean switching = currentAltHashing ^ useAltHashing;
     if (switching) {
         // 返回一个非零的32位伪随机值, 其中当前HashMap实例用作值的一部分, 构造新的哈希种子作为掩码
         hashSeed = useAltHashing ? sun.misc.Hashing.randomHashSeed(this) : 0;
     }
 
-    // 返回是否切换了哈希种子
+    // 返回是否生成/切换哈希种子
     return switching;
 }
 ```
@@ -8837,7 +8882,7 @@ void resize(int newCapacity) {
 
     // 使用头插法将当前表中的所有条目传输到newTable, 可能会重新计算hash值
     transfer(newTable,
-             // 初始化哈希种子, 会推迟初始化, 直到指定的容量大于哈希种子阈值, 返回值用作判断是否重新hash的依据
+             // 生成/切换哈希种子(会推迟初始化, 默认为0, 代表不生效), 直到指定的容量大于哈希种子阈值(可通过改变JVM参数提前触发更换时机), 返回值用作判断是否重新hash的依据(因为返回true代表了更换了哈希算法), 一般为false
              initHashSeedAsNeeded(newCapacity));
 
     table = newTable;
@@ -8854,9 +8899,12 @@ void transfer(Entry[] newTable, boolean rehash) {
         // 遍历e链表, 如果哈希种子有变化, 则重新每个e结点的hash值, 重新计算哈希索引i, 并设置到新散列表i桶中
         while(null != e) {
             Entry<K,V> next = e.next;
+            
+            // 一般为false
             if (rehash) {
                 e.hash = null == e.key ? 0 : hash(e.key);
             }
+            
             int i = indexFor(e.hash, newCapacity);
 
             // 头插法
@@ -9100,6 +9148,980 @@ final Entry<K,V> getEntry(Object key) {
 
     // 如果确实找不到e结点, 则返回null
     return null;
+}
+```
+
+#### JDK7 ConcurrentHashMap
+
+![1625053979148](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625053979148.png)
+
+##### 特点
+
+- JDk7 ConcurrentHashMap，JDK 1.7中**哈希表的并发实现，支持检索的完全并发性和可调整的更新预期并发性**。遵循与 {@link java.util.Hashtable} 相同的功能规范，并包含与 Hashtable 的每个方法对应的方法版本。与 {@link Hashtable} 类似但与 {@link HashMap} 不同的是，**此类不允许将 null 用作键或值**。
+- 与 {@link Hashtable}  不同，虽然所有操作也是线程安全的，但是**检索操作不需要对整个散列表加锁**。在依赖其线程安全但不依赖其同步细节的程序中，此类与 Hashtable 完全可互操作。
+- 检索操作（包括获取）一般不会阻塞，因此可能与更新操作（包括放置和删除）重叠。 检索反映了**最近完成的更新操作的结果**。 对于诸如 putAll 和 clear 之类的聚合操作，并发检索可能仅反映某些条目的插入或删除。 
+- 类似地，迭代器和枚举返回反映哈希表在迭代器/枚举创建时或创建后的**某个时刻的状态的元素**。它们不会抛出 {@link ConcurrentModificationException}。 然而，**迭代器被设计为一次只能被一个线程使用**。
+- 更新操作之间允许的并发性，由可选的 **concurrencyLevel** 构造函数参数（默认为 16）来控制，用作内部调整的提示。散列表在内部进行了分区，以尝试允许**指定数量的并发更新**而不会发生争用。
+  - 由于散列表中的放置本质上是随机的，所以实际的并发性会有所不同。
+  - 理想情况下，您应该选择一个值来容纳尽可能多的线程同时修改表。使用**明显高于需要的值会浪费空间和时间**，而**明显较低的值会导致线程争用**。但一个数量级内的高估和低估通常不会产生太大的影响。当已知只有一个线程会修改而所有其他线程只会读取时，值1是合适的。
+  - 此外，调整此散列表或任何其他类型的散列表的大小是一个相对较慢的操作，因此，如果可能，最好在构造函数中提供预期表大小的估计值。
+  - concurrencyLevel在**JDK8 ConcurrentHashMap**中，为了能够向后兼容，其作用更改为**只要不为负数即可**，且当指定的initialCapacity < concurrencyLevel，将使用concurrencyLevel作为新的initialCapacity。
+- JDK7 ConcurrentHashMap基本策略是**将散列表细分到Segment中，每个Segment本身就是一个并发可读的散列表**。
+  - 为了减少占用空间，只有在第一次需要时才构建除一个段之外的所有段。
+  - 为了在存在延迟构造的情况下保持可见性，对段以及段表的元素的访问必须使用**volatile访问**，这是通过 segmentAt 等方法中的 Unsafe 完成的，**提供了 AtomicReferenceArrays 的功能，但减少了间接级别**。 
+  - 此外，锁定操作中表元素和条目**“next”字段的volatile**写入使用更便宜的“lazySet”形式的写入（通过 **putOrderedObject**），因为这些写入总是跟随锁释放，以保持表更新的顺序一致性。
+
+##### 数据结构
+
+![1625286571593](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625286571593.png)
+
+##### 构造方法
+
+- **空参的构造方法**：使用默认初始容量 (16)、负载因子 (0.75) 和 concurrencyLevel (16) 创建一个新的空映射。
+- **指定初始容量的构造方法**：使用指定的初始容量、默认负载因子 (0.75) 和 concurrencyLevel (16) 创建一个新的空映射。
+- **指定初始容量和负载因子的构造方法**：使用指定的初始容量和负载因子以及默认的 concurrencyLevel (16) 创建一个新的空映射。
+- **指定初始容量、负载因子和并发数量的构造方法**：使用指定的初始容量、负载因子和并发数量创建一个新的空映射, segment[]长度sszie为2的幂次(concurrencyLevel), 每个segment里table的长度为max(2的幂次(initialCapacity/sszie), 2)。
+- **指定复制集合的构造方法**：创建一个与给定Map具有相同映射的新Map。该映射的创建容量为给定映射中映射数的1.5倍或16（以较大者为准），以及默认负载因子(0.75)和concurrencyLevel(16)。
+
+```java
+public class ConcurrentHashMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V>, Serializable {
+    
+    static final int DEFAULT_INITIAL_CAPACITY = 16;
+    static final float DEFAULT_LOAD_FACTOR = 0.75f;
+    static final int DEFAULT_CONCURRENCY_LEVEL = 16;
+    static final int MAXIMUM_CAPACITY = 1 << 30;
+    static final int MIN_SEGMENT_TABLE_CAPACITY = 2;// 每段表的最小容量，至少为2的2的幂
+    static final int MAX_SEGMENTS = 1 << 16;// 允许的最大段数，必须是小于 1 << 24 的2的幂
+    
+    // 避免size（）、containsValue （）在表进行连续修改时无限制的重试
+    static final int RETRIES_BEFORE_LOCK = 2;
+    
+    // 哈希种子可以让哈希算法更复杂一点，从而减少哈希碰撞的概率，如果为0代表哈希种子不生效
+    private transient final int hashSeed = randomHashSeed(this);
+    
+    // ssize-1, 得到Segment[]长度的掩码, 在(hash(key) >>> segmentShift) & segmentMask中, 用来判断key到底落在哪个segment上
+    final int segmentMask;
+   
+    // 32-幂次sshift, 得到剩余高位的位数, 在(hash(key) >>> segmentShift) & segmentMask中, 用来判断key到底落在哪个segment上
+    final int segmentShift;
+    
+    // Segment[], 代表ConcurrentHashMap的直接数据结构, 里面每个Segment含有table, 可以看作是一个小的HashMap
+    final Segment<K,V>[] segments;
+
+    // Unsafe mechanics
+    private static final sun.misc.Unsafe UNSAFE;
+    
+    // Segment[]数组起始偏移, ConcurrentHashMap中的segments
+    private static final long SBASE;
+    
+    // numberOfLeadingZeros得到ss高位1前的0的位数, 31-numberOfLeadingZeros得到ss高位1后的位数 => 如果ss为2的幂次数, 则J << SSHIFT + BASE 等价于 j * ss + BASE
+    private static final int SSHIFT;
+    
+    // HashEntry[]数组起始偏移, 每个Segement中的table
+    private static final long TBASE;
+    
+    // numberOfLeadingZeros得到ss高位1前的0的位数, 31-numberOfLeadingZeros得到ss高位1后的位数 => 如果ss为2的幂次数, 则J << SSHIFT + BASE 等价于 j * ss + BASE
+    private static final int TSHIFT;
+    
+    // hashSeed, 哈希种子
+    private static final long HASHSEED_OFFSET;
+    
+    // segmentShift, 用来判断key到底落在哪个segment上
+    private static final long SEGSHIFT_OFFSET;
+    
+    // segmentMask, 用来判断key到底落在哪个segment上
+    private static final long SEGMASK_OFFSET;
+    
+    // segments, Segment[]
+    private static final long SEGMENTS_OFFSET;
+    ...
+
+    // 使用默认初始容量 (16)、负载因子 (0.75) 和 concurrencyLevel (16) 创建一个新的空映射。
+    public ConcurrentHashMap() {
+        this(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR, DEFAULT_CONCURRENCY_LEVEL);
+    }
+    
+    // 使用指定的初始容量、默认负载因子 (0.75) 和 concurrencyLevel (16) 创建一个新的空映射。
+    public ConcurrentHashMap(int initialCapacity) {
+        this(initialCapacity, DEFAULT_LOAD_FACTOR, DEFAULT_CONCURRENCY_LEVEL);
+    }
+    
+    // 使用指定的初始容量和负载因子以及默认的 concurrencyLevel (16) 创建一个新的空映射。
+    public ConcurrentHashMap(int initialCapacity, float loadFactor) {
+        this(initialCapacity, loadFactor, DEFAULT_CONCURRENCY_LEVEL);
+    }
+    
+    // 使用指定的初始容量、负载因子和并发数量创建一个新的空映射, Segment[]长度sszie为2的幂次(concurrencyLevel), 每个segment里table的长度为max(2的幂次(initialCapacity/sszie), 2)
+    public ConcurrentHashMap(int initialCapacity, float loadFactor, int concurrencyLevel) {
+        if (!(loadFactor > 0) || initialCapacity < 0 || concurrencyLevel <= 0)
+            throw new IllegalArgumentException();
+        
+        // 如果指定的concurrencyLevel 大于 允许的最大段数1<< 16, 则设置concurrencyLevel为允许的最大段数
+        if (concurrencyLevel > MAX_SEGMENTS)
+            concurrencyLevel = MAX_SEGMENTS;
+
+        // 查找最佳匹配参数的二的幂
+        int sshift = 0;// ssize的幂次sshift, 代表Segment[]长度在低位占据几个1
+        int ssize = 1;// ssize=2的幂次(concurrencyLevel), 用作Segment[]长度
+        while (ssize < concurrencyLevel) {
+            ++sshift;
+            ssize <<= 1;
+        }
+        
+        // 32-幂次sshift, 得到剩余高位的位数, 在(hash(key) >>> segmentShift) & segmentMask中, 用来判断key到底落在哪个segment上
+        this.segmentShift = 32 - sshift;
+        
+        // ssize-1, 得到segment[]长度的掩码, 在(hash(key) >>> segmentShift) & segmentMask中, 用来判断key到底落在哪个segment上
+        this.segmentMask = ssize - 1;
+
+        // c向上取整initialCapacity/ssize; cap取最接近c的2次幂, 用作segment中table的长度(至少为2)
+        if (initialCapacity > MAXIMUM_CAPACITY)
+            initialCapacity = MAXIMUM_CAPACITY;
+        int c = initialCapacity / ssize;
+        if (c * ssize < initialCapacity)
+            ++c;
+        int cap = MIN_SEGMENT_TABLE_CAPACITY;
+        while (cap < c)
+            cap <<= 1;
+
+        // create segments and segments[0]
+        // 创建第一个segment s0, 其中的散列表table(长度为cap), 并指定负载因子等于传入的负载因子, 阈值等于cap*loadFactor
+        Segment<K,V> s0 = new Segment<K,V>(loadFactor, (int)(cap * loadFactor), (HashEntry<K,V>[])new HashEntry[cap]);
+
+        // 构造ssize长度的Segment[] ss, 有序地写入段[0], 并更新segments指针
+        Segment<K,V>[] ss = (Segment<K,V>[])new Segment[ssize];
+        UNSAFE.putOrderedObject(ss, SBASE, s0);
+        this.segments = ss;
+    }
+    
+    // 创建一个与给定Map具有相同映射的新Map。该映射的创建容量为给定映射中映射数的1.5倍或16（以较大者为准），以及默认负载因子(0.75)和concurrencyLevel(16)。
+    public ConcurrentHashMap(Map<? extends K, ? extends V> m) {
+        this(Math.max((int) (m.size() / DEFAULT_LOAD_FACTOR) + 1,
+                      DEFAULT_INITIAL_CAPACITY),
+             DEFAULT_LOAD_FACTOR, DEFAULT_CONCURRENCY_LEVEL);
+        
+        // 添加复制集合的的所有键值对
+        putAll(m);
+    }
+}
+```
+
+##### Segment[]长度规范计算方法
+
+- **初始长度**：规范化Segment数组长度ssize，逻辑在三参数的构造方法里，其中如果 concurrencyLevel为2的幂次，则 concurrencyLevel就作为Segment[]的长度，否则**ssize取大于且最接近concurrencyLevel的2的幂次数**。
+- **Segment[]长度一但确定后，则不会再改变了**。
+
+```java
+// 查找最佳匹配参数的二的幂
+int sshift = 0;// ssize的幂次sshift, 代表Segment[]长度在低位占据几个1
+int ssize = 1;// ssize=2的幂次(concurrencyLevel), 用作Segment[]长度
+while (ssize < concurrencyLevel) {
+    ++sshift;
+    ssize <<= 1;
+}
+```
+
+##### 迭代方法
+
+- **ConcurrentHashMap.HashIterator迭代器**：HashMap的迭代器基类，**非快速失败机制**，advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回ConcurrentHashMap.HashEntry对象。
+- **Map.Entry迭代器**：继承ConcurrentHashMap.HashIterator迭代器，**非快速失败机制**，advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回ConcurrentHashMap.WriteThroughEntry对象。
+- **ConcurrentHashMap.HashEntry#Key迭代器**：继承ConcurrentHashMap.HashIterator迭代器，**非快速失败机制**，advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回ConcurrentHashMap.HashEntry#Key对象。
+- **ConcurrentHashMap.HashEntry#Value迭代器**：继承ConcurrentHashMap.HashIterator迭代器，**非快速失败机制**，advance方法提前提前缓存nextValue，因此该迭代器是**弱一致性**的。返回ConcurrentHashMap.HashEntry#Valuie对象。
+
+```java
+// HashMap的迭代器基类，非快速失败机制，advance方法提前提前缓存nextValue，因此该迭代器是弱一致性的。返回ConcurrentHashMap.HashEntry对象。
+abstract class HashIterator {
+    int nextSegmentIndex;// Segment[]索引
+    int nextTableIndex;// Segment#HashEntry[]索引
+    HashEntry<K,V>[] currentTable;// Segment#HashEntry[]
+    HashEntry<K, V> nextEntry;// 缓存下一个要返回的结点
+    HashEntry<K, V> lastReturned;// 当前返回的结点
+
+    HashIterator() {
+        nextSegmentIndex = segments.length - 1;
+        nextTableIndex = -1;
+        advance();// 缓存下一个要返回的结点
+    }
+
+    // 缓存下一个要返回的结点
+    final void advance() {
+        for (;;) {
+            // 倒序遍历Segment中的散列表
+            if (nextTableIndex >= 0) {
+                if ((nextEntry = entryAt(currentTable, nextTableIndex--)) != null)
+                    break;
+            }
+            // 倒序遍历Segment[]
+            else if (nextSegmentIndex >= 0) {
+                Segment<K,V> seg = segmentAt(segments, nextSegmentIndex--);
+                if (seg != null && (currentTable = seg.table) != null)
+                    nextTableIndex = currentTable.length - 1;
+            }
+            else
+                break;
+        }
+    }
+
+    public final boolean hasNext() { return nextEntry != null; }
+    
+    // 返回nextEntry
+    final HashEntry<K,V> nextEntry() {
+        HashEntry<K,V> e = nextEntry;
+        if (e == null)
+            throw new NoSuchElementException();
+        lastReturned = e; // cannot assign until after null check
+        if ((nextEntry = e.next) == null)
+            advance();// 缓存下一个要返回的结点
+        return e;
+    }
+}
+
+// 继承ConcurrentHashMap.HashIterator迭代器，非快速失败机制，advance方法提前提前缓存nextValue，因此该迭代器是弱一致性的。返回ConcurrentHashMap.WriteThroughEntry对象。
+final class EntryIterator extends  HashIterator implements Iterator<Entry<K,V>> {
+    public Map.Entry<K,V> next() {
+        HashEntry<K,V> e = super.nextEntry();
+        return new WriteThroughEntry(e.key, e.value);
+    }
+}
+// EntryIterator.next() 使用的自定义条目类
+final class WriteThroughEntry extends AbstractMap.SimpleEntry<K,V> {
+    WriteThroughEntry(K k, V v) {
+        super(k,v);
+    }
+
+    // 替换当前Entry值为value后, 再调用ConcurrentHashMap#put方法替换key对应结点的值
+    public V setValue(V value) {
+        if (value == null) throw new NullPointerException();
+        V v = super.setValue(value);
+        ConcurrentHashMap.this.put(getKey(), value);
+        return v;
+    }
+}
+
+// 继承ConcurrentHashMap.HashIterator迭代器，非快速失败机制，advance方法提前提前缓存nextValue，因此该迭代器是弱一致性的。返回ConcurrentHashMap.HashEntry#Key对象。
+final class KeyIterator extends HashIterator implements Iterator<K>, Enumeration<K> {
+    public final K next()        { return super.nextEntry().key; }
+    public final K nextElement() { return super.nextEntry().key; }
+}
+
+// 继承ConcurrentHashMap.HashIterator迭代器，非快速失败机制，advance方法提前提前缓存nextValue，因此该迭代器是弱一致性的。返回ConcurrentHashMap.HashEntry#Valuie对象。
+final class ValueIterator extends HashIterator implements Iterator<V>, Enumeration<V> {
+    public final V next()        { return super.nextEntry().value; }
+    public final V nextElement() { return super.nextEntry().value; }
+}
+```
+
+##### 初始化哈希种子
+
+- **randomHashSeed（ConcurrentHashMap）**：返回一个非零的32位伪随机值, 其中当前ConcurrentHashMap实例用作值的一部分, 构造新的哈希种子。只在这里被调用。
+
+```java
+// 哈希种子可以让哈希算法更复杂一点，从而减少哈希碰撞的概率，如果为0代表哈希种子不生效
+private transient final int hashSeed = randomHashSeed(this);
+
+// 返回一个非零的32位伪随机值, 其中当前ConcurrentHashMap实例用作值的一部分, 构造新的哈希种子
+private static int randomHashSeed(ConcurrentHashMap instance) {
+    if (sun.misc.VM.isBooted() && Holder.ALTERNATIVE_HASHING) {
+        return sun.misc.Hashing.randomHashSeed(instance);
+    }
+
+    return 0;
+}
+```
+
+##### HashCode扰动函数
+
+- **hash（Object）**：
+  - HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响。
+  - **产生的Hash值既会用来定位Segment索引, 又会定位Segment#table中的索引**。
+
+```java
+// HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+private int hash(Object k) {
+    // 哈希种子可以让哈希算法更复杂一点，从而减少哈希碰撞的概率，如果为0代表哈希种子不生效
+    int h = hashSeed;
+
+    // 如果k为String类型, 则返回k的32位哈希值
+    if ((0 != h) && (k instanceof String)) {
+        return sun.misc.Hashing.stringHash32((String) k);
+    }
+
+    // 如果k不为String类型, 则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    // 如果h为默认0, 则h异或k的散列表码, 还是会等于k的散列码
+    h ^= k.hashCode();
+
+    // 产生的Hash值既会用来定位Segment索引, 又会定位Segment#table中的索引 => 把高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    h += (h <<  15) ^ 0xffffcd7d;
+    h ^= (h >>> 10);
+    h += (h <<   3);
+    h ^= (h >>>  6);
+    h += (h <<   2) + (h << 14);
+    return h ^ (h >>> 16);
+}
+```
+
+##### 获取/创建Segment方法
+
+- **ensureSegment（int）**：
+  - 返回k段, 如果不存在, 则**创建**它，并通过CAS记录在segment[k]中。
+  - 被size、containsValue、put、putIfAbsent、writeObject方法调用。
+- **segmentForHash（int）**：
+  - 获取给定hash值的段，**不会去创建k段Segment**。
+  - 被remove、replace方法调用。
+- **segmentAt（Segment[]，int）**：
+  - 获取主内存的Segment[j]对象。
+  - 被isEmpty、size、containsValue、clear、HashIterator#advance、writeObject方法调用。
+
+```java
+// 返回k段, 如果不存在, 则创建它并通过CAS记录在segment[k]中
+private Segment<K,V> ensureSegment(int k) {
+    // Segment数组segments, k段偏移u, k段seg
+    final Segment<K,V>[] ss = this.segments;
+    long u = (k << SSHIFT) + SBASE; // raw offset
+    Segment<K,V> seg;
+
+    // 如果k段seg为null, 说明k段Segment还没初始化, 则使用段0作为原型创建Segment
+    if ((seg = (Segment<K,V>)UNSAFE.getObjectVolatile(ss, u)) == null) {
+        // 第0段proto, proto散列表容量cap, proto负载因子lf, cap*lf计算出阈值threshold
+        Segment<K,V> proto = ss[0];
+        int cap = proto.table.length;
+        float lf = proto.loadFactor;
+        int threshold = (int)(cap * lf);
+
+        // 使用第0段proto作为原型, 构造出同样容量cap的散列表tab
+        HashEntry<K,V>[] tab = (HashEntry<K,V>[])new HashEntry[cap];
+
+        // 再次检查k段是否为null, 如果为null, 说明还没被其他线程赋值, 则构建Segment对象, 并CAS更新到k段位置
+        if ((seg = (Segment<K,V>)UNSAFE.getObjectVolatile(ss, u)) == null) {
+            Segment<K,V> s = new Segment<K,V>(lf, threshold, tab);
+            while ((seg = (Segment<K,V>)UNSAFE.getObjectVolatile(ss, u)) == null) {
+                if (UNSAFE.compareAndSwapObject(ss, u, null, seg = s))
+                    break;
+            }
+        }
+    }
+
+    // 最后无论当前线程实际有没有创建k段Segment, 都返回k段Segment
+    return seg;
+}
+
+// 获取给定hash值的段
+private Segment<K,V> segmentForHash(int h) {
+    // h >>> segmentShift, 相当于取 hash的高ssize位数值 % (ssize-1), 得到hash在segment[]中的索引, 而SBASE为Segment[]的起始内存地址, ss为数组中每个对象的内存块大小, SSHIFT为sc高位1后的位数, 当ss为2的幂次时, j<<SSHIFT相当于j*ss, (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE, 直接获取Segment[]中hash值对应的索引j个对象
+    long u = (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE;
+    return (Segment<K,V>) UNSAFE.getObjectVolatile(segments, u);
+}
+
+// 获取主内存的Segment[j]对象
+static final <K,V> Segment<K,V> segmentAt(Segment<K,V>[] ss, int j) {
+    // j为在Segment[]中的索引, 而SBASE为Segment[]的起始内存地址, ss为数组中每个对象的内存块大小, SSHIFT为sc高位1后的位数, 当ss为2的幂次时, j<<SSHIFT相当于j*ss, 因此u相当于Segment[j]对象的偏移
+    long u = (j << SSHIFT) + SBASE;
+
+    // 获取主内存的Segment[j]
+    return ss == null ? null : (Segment<K,V>) UNSAFE.getObjectVolatile(ss, u);
+}
+```
+
+##### 获取/更新HashEntry方法
+
+- **entryAt（HashEntry[]，int）**：
+  - 使用volatile读取语义，获取给定表tab中的第i个元素。
+  - 被Segment#put、Segment#remove、containsValue、HashIterator#advance、writeObject方法调用。
+- **entryForHash（Segment，int）**：
+  - 获取指定段seg中散列表的给定hash值的条目。
+  - Segment#scanAndLockForPut、Segment#scanAndLock、Segment#replace方法调用。
+- **setEntryAt（HashEntry[]，int， HashEntry）**：
+  - 设置给定表tab中的第i个元素。
+  - 被Segment#put、Segment#remove、Segment#clear方法调用。
+
+```java
+// 使用volatile读取语义，获取给定表tab中的第i个元素
+static final <K,V> HashEntry<K,V> entryAt(HashEntry<K,V>[] tab, int i) {
+    return (tab == null) ? null : 
+    (HashEntry<K,V>) UNSAFE.getObjectVolatile(tab, ((long)i << TSHIFT) + TBASE);
+}
+
+// 获取指定段seg中散列表的给定hash值的条目
+static final <K,V> HashEntry<K,V> entryForHash(Segment<K,V> seg, int h) {
+    HashEntry<K,V>[] tab;
+    return (seg == null || (tab = seg.table) == null) ? null :
+    // (tab.length - 1) & h, 计算出h所在散列表的索引, 再((tab.length - 1) & h <<< TSHIFT) + TBASE获取当前索引在table数组中的对象
+    (HashEntry<K,V>) UNSAFE.getObjectVolatile(tab, ((long)(((tab.length - 1) & h)) << TSHIFT) + TBASE);
+}
+
+// 设置给定表tab中的第i个元素
+static final <K,V> void setEntryAt(HashEntry<K,V>[] tab, int i, HashEntry<K,V> e) {
+    UNSAFE.putOrderedObject(tab, ((long)i << TSHIFT) + TBASE, e);
+}
+```
+
+##### Segment
+
+###### Segment & HashEntry
+
+```java
+// Segment[]中的每段Segment, 类似于一个HashMap, 但本身又继承了ReentrantLock, 所以每段Segment还是一把锁, 更新Segment需要获取该锁, 从而保证线程安全
+static final class Segment<K,V> extends ReentrantLock implements Serializable {
+    // 预扫描中tryLock的最大次数
+    static final int MAX_SCAN_RETRIES = 
+        Runtime.getRuntime().availableProcessors() > 1 ? 64 : 1;
+
+    // Segment[]中的每段Segment中的散列表, 相当于HashMap中的table
+    transient volatile HashEntry<K,V>[] table;
+
+    // Segment[]中的每段Segment中的散列表元素个数, 相当于HashMap中的table的实际大小
+    transient int count;
+
+    // Segment[]中的每段Segment中的散列表修改模数, 相当于HashMap中的table的修改模数
+    transient int modCount;
+
+    // Segment[]中的每段Segment中的散列表阈值, 相当于HashMap中的table的阈值
+    transient int threshold;
+
+    // Segment[]中的每段Segment中的散列表负载因子, 相当于HashMap中的table的负载因子
+    final float loadFactor;
+
+    // 指定负载因子、阈值、散列表来构造段
+    Segment(float lf, int threshold, HashEntry<K,V>[] tab) {
+        this.loadFactor = lf;
+        this.threshold = threshold;
+        this.table = tab;
+    }
+}
+
+// Segment[]中的每段Segment中table的结点类型, 相当于HashMap中的Entry
+static final class HashEntry<K,V> {
+    final int hash;
+    final K key;
+    volatile V value;
+    volatile HashEntry<K,V> next;
+
+    HashEntry(int hash, K key, V value, HashEntry<K,V> next) {
+        this.hash = hash;
+        this.key = key;
+        this.value = value;
+        this.next = next;
+    }
+}
+```
+
+###### table容量规范计算方法
+
+- **table初始容量**：规范化Segment#table即HashEntry[]长度，逻辑在三参数的构造方法里，其中**c向上取整initialCapacity/ssize**，table初始容量为**cap取大于且最接近c的2的幂次数**。
+- **table扩容后的容量**：int newCapacity = oldCapacity << 1，即**新容量等于旧容量的2倍**。
+
+```java
+// c向上取整initialCapacity/ssize; cap取最接近c的2次幂, 用作segment中table的长度(至少为2)
+if (initialCapacity > MAXIMUM_CAPACITY)
+    initialCapacity = MAXIMUM_CAPACITY;
+int c = initialCapacity / ssize;
+if (c * ssize < initialCapacity)
+    ++c;
+int cap = MIN_SEGMENT_TABLE_CAPACITY;
+while (cap < c)
+    cap <<= 1;
+```
+
+###### 扩容方法
+
+- **rehash（HashEntry）**：
+  - 扩容当前segment的散列表，重新计算每个链表结点hash值对应新表的索引，并**分成高低链表转移到新表中**，最后把要插入的node结点也插入到新表中，更新当前segment的散列表为新表。
+  - 对于比JDK7 HashMap，JDK7 ConcurrentHashMap扩容转移元素时，并不需要判断是否已经切换了哈希算法（哈希种子），而是**仍然使用原key的hash值**，通过低位链表分块的转移到新表中。
+  - 只被Segment#put方法调用。
+
+```java
+// 扩容当前segment的散列表, 重新计算每个链表结点hash值对应新表的索引, 并分成高低链表转移到新表中, 最后把要插入的node结点也插入到新表中, 更新当前segment的散列表为新表
+private void rehash(HashEntry<K,V> node) {
+    // 旧表oldTable, 旧表容量oldCapacity, 新表容量newCapacity, 新表阈值threshold, 新表掩码sizeMask
+    HashEntry<K,V>[] oldTable = table;
+    int oldCapacity = oldTable.length;
+    int newCapacity = oldCapacity << 1;
+    threshold = (int)(newCapacity * loadFactor);
+    HashEntry<K,V>[] newTable =
+        (HashEntry<K,V>[]) new HashEntry[newCapacity];
+    int sizeMask = newCapacity - 1;
+
+    // 从头开始遍历旧表oldTable, 当前遍历结点e
+    for (int i = 0; i < oldCapacity ; i++) {
+        HashEntry<K,V> e = oldTable[i];
+
+        // 如果e结点不为null, 说明e桶链表存在结点, 则遍历e链表, 后继next, e桶头结点在新表中的索引idx
+        if (e != null) {
+            HashEntry<K,V> next = e.next;
+            int idx = e.hash & sizeMask;
+
+            // 如果后继为null, 说明e链表只有一个桶头结点e, 则移动e到新表即可
+            if (next == null)
+                newTable[idx] = e;
+            // 如果后继不为null, 说明需要转移链表到新表中
+            else {
+                HashEntry<K,V> lastRun = e;
+                int lastIdx = idx;
+
+                // 遍历e链表, 找出最后一段头开始的结点lastRun(一般来说只有两段, 因为扩容成两倍只差1位), 对应索引lastIdx
+                for (HashEntry<K,V> last = next; last != null; last = last.next) {
+                    int k = last.hash & sizeMask;
+                    if (k != lastIdx) {
+                        lastIdx = k;
+                        lastRun = last;
+                    }
+                }
+
+                // 找到lastRun后, 转移lastRun链表到新表的lastIdx位置, 完成高位链表转移
+                newTable[lastIdx] = lastRun;
+
+                // Clone remaining nodes 克隆剩余节点
+                // 如果低位还有结点, 则从头开始遍历到lastRun之前, 头插法插入每个遍历到的结点到新表的k位置
+                for (HashEntry<K,V> p = e; p != lastRun; p = p.next) {
+                    V v = p.value;
+                    int h = p.hash;
+                    int k = h & sizeMask;
+                    HashEntry<K,V> n = newTable[k];
+                    newTable[k] = new HashEntry<K,V>(h, p.key, v, n);
+                }
+            }
+        }
+    }
+
+    // 重新计算要插入node结点在新表中的索引, 并更新node.next为新表索引中的桶头结点, 头插法把node结点插入新表中
+    int nodeIndex = node.hash & sizeMask;
+    node.setNext(newTable[nodeIndex]);
+    newTable[nodeIndex] = node;
+
+    // 更新当前segment的散列表为新表
+    table = newTable;
+}
+```
+
+###### put自旋获取当前Segment锁方法
+
+- **scanAndLockForPut（K，int，V）**：自旋获取当前segment锁, **自旋期间会尝试创建node结点**，如果自旋次数超过最大值还会阻塞获取锁，直到获取到锁才返回。
+
+```java
+// 自旋获取当前segment锁, 自旋期间会尝试创建node结点, 如果自旋次数超过最大值还会阻塞获取锁, 直到获取到锁才返回
+private HashEntry<K,V> scanAndLockForPut(K key, int hash, V value) {
+    // 获取指定段seg中散列表的给定hash值的条目first, first备份条目e, 要返回的条目node, 新桶头结点f, 重试次数retries(初始时为-1)
+    HashEntry<K,V> first = entryForHash(this, hash);
+    HashEntry<K,V> e = first;
+    HashEntry<K,V> node = null;
+    int retries = -1;
+
+    // 快速失败自旋获取当前segment锁, 如果获取不到, 则期间会尝试创建node结点
+    while (!tryLock()) {
+        HashEntry<K,V> f; 
+
+        // 如果retries < 0, 说明node结点还没找到或者创建, 则遍历e链表
+        if (retries < 0) {
+            // 如果e为null, 说明要么桶头结点first为null, 要么遍历到了e链尾还没找到node结点, 则创建node结点
+            if (e == null) {
+                if (node == null)
+                    node = new HashEntry<K,V>(hash, key, value, null);
+
+                // 更新retries为0, 代表node结点已创建
+                retries = 0;
+            }
+            // 如果e不为null, 说明正在遍历链表, 如果key euqals e键, 说明e就是要找的结点, 则更新retries为0, 代表node结点已找到, 此时返回node结点为不为null也没关系, 因为外层逻辑不会走node设置到桶头结点的逻辑
+            else if (key.equals(e.key))
+                retries = 0;
+            // 如果e不为null, 且key不equals e键, 则继续遍历e链表
+            else
+                e = e.next;
+        }
+
+       // 如果retries >= 0, 说明node结点已找到或者已创建, 则继续自旋获取锁, 直到达到最大重试次数
+        else if (++retries > MAX_SCAN_RETRIES) {
+            // 否则, 阻塞获取锁, 直到获取到锁才返回
+            lock();
+            break;
+        }
+
+        // 如果自旋次数达到了最大值, 且重试次数为奇数次时, 则重新获取指定段seg中散列表的给定hash值的条目f, 如果f不等于first, 说明桶头结点被更改了, 则重新更新first和e为新的桶头结点, 且重新自旋
+        else if ((retries & 1) == 0 && (f = entryForHash(this, hash)) != first) {
+            e = first = f; // re-traverse if entry changed
+            retries = -1;
+        }
+    }
+
+    // 自旋结束, 代表当前线程获取到了当前segment锁
+    // node结点为null代表在e链表中找到了key对应的结点;
+    // node结点不为null, 可能代表无论是新旧e链表中, 肯定不存在key对应的结点, 此时node结点返回后肯定会被当做桶头结点插入
+    // node结点不为null, 可能还代表原e链表中找不到且创建了node结点, 但原e链表被其他线程更新了, 且新e链表存在key对应的结点, 此时返回node结点为不为null也没关系, 因为外层逻辑不会走node设置到桶头结点的逻辑
+    return node;
+}
+
+```
+
+###### remove/replace自旋获取当前Segment锁方法
+
+- **scanAndLock（Object，int）**：自旋获取当前segment锁，**自旋期间不会尝试创建node结点但会遍历e链表**，如果自旋次数超过最大值还会阻塞获取锁，直到获取到锁才返回。
+
+```java
+// 自旋获取当前segment锁, 自旋期间不会尝试创建node结点但会遍历e链表, 如果自旋次数超过最大值还会阻塞获取锁, 直到获取到锁才返回
+private void scanAndLock(Object key, int hash) {
+    // similar to but simpler than scanAndLockForPut 类似于但比 scanAndLockForPut 更简单
+    // 获取指定段seg中散列表的给定hash值的条目first, first备份条目e, 新桶头结点f, 重试次数retries(初始时为-1)
+    HashEntry<K,V> first = entryForHash(this, hash);
+    HashEntry<K,V> e = first;
+    int retries = -1;
+
+    // 快速失败自旋获取当前segment锁, 对比scanAndLockForPut, 如果获取不到, 则期间并不会尝试创建node结点
+    while (!tryLock()) {
+        HashEntry<K,V> f;
+
+        // 如果retries < 0, 说明node结点还没已找到或者e链表还没遍历完, 则遍历e链表
+        if (retries < 0) {
+            // 如果e为null, 说明遍历到了e链尾还没找到node结点, 或者如果找到了key对应的node, 则停止遍历
+            if (e == null || key.equals(e.key))
+                // 更新retries为0, 代表node结点已找到或者已经遍历完了
+                retries = 0;
+            // 如果e不为null, 且key不equals e键, 则继续遍历e链表
+            else
+                e = e.next;
+        }
+
+        // 如果retries >= 0, 说明node结点已找到或者已经遍历完了, 则继续自旋获取锁, 直到达到最大重试次数
+        else if (++retries > MAX_SCAN_RETRIES) {
+            // 否则, 阻塞获取锁, 直到获取到锁才返回
+            lock();
+            break;
+        }
+
+        // 如果自旋次数达到了最大值, 且重试次数为奇数次时, 则重新获取指定段seg中散列表的给定hash值的条目f, 如果f不等于first, 说明桶头结点被更改了, 则重新更新first和e为新的桶头结点, 且重新自旋
+        else if ((retries & 1) == 0 && (f = entryForHash(this, hash)) != first) {
+            e = first = f;
+            retries = -1;
+        }
+    }
+}
+```
+
+###### 添加元素方法
+
+- **put（K，int，V，boolean）**：**获取当前segment锁后**, 往其散列表添加key-value条目, onlyIfAbsent为true代表只允许key对应结点不存在时才添加, 为false代表key对应结点已存在时可以发生值替换; 如果散列表实际大小超过阈值, 则还会**发生扩容**。
+
+```java
+// 获取当前segment锁后, 往其散列表添加key-value条目, onlyIfAbsent为true代表只允许key对应结点不存在时才添加, 为false代表key对应结点已存在时可以发生值替换; 如果散列表实际大小超过阈值, 则还会发生扩容
+final V put(K key, int hash, V value, boolean onlyIfAbsent) {
+    // 快速失败方式获取当前segment锁, 如果获取到, 则node为null, 代表node结点没有创建; 否则自旋获取当前segment锁, 自旋期间会尝试创建node结点, 如果自旋次数超过最大值还会阻塞获取锁, 直到获取到锁才返回
+    HashEntry<K,V> node = tryLock() ? null : scanAndLockForPut(key, hash, value);
+    V oldValue;
+
+    try {
+        // 到这里, 当前线程获取到了当前segment锁, 提前创建的结点node, segment散列表tab, hash值表索引为index
+        HashEntry<K,V>[] tab = table;
+        int index = (tab.length - 1) & hash;
+
+        // 通过Unsafe方法获取主内存中tab表index位置的元素first, 此时first为最新的桶头结点, 且当前处于锁定状态中, 肯定不会被其他线程更新了
+        HashEntry<K,V> first = entryAt(tab, index);
+
+        // 遍历first桶链表, 当前遍历元素e
+        for (HashEntry<K,V> e = first;;) {
+            // 如果e不为null, 说明需要判断e链表中是否已存在key对应的元素
+            if (e != null) {
+                K k;
+
+                // 如果key等于e键或者e的hash值等于hash且key equals e键, 说明找到了key对应的结点e
+                if ((k = e.key) == key || (e.hash == hash && key.equals(k))) {
+                    oldValue = e.value;
+
+                    // 此时如果需要果只允许在不存在时才添加, 则什么也不做, 否则替换旧值, 结束遍历
+                    if (!onlyIfAbsent) {
+                        e.value = value;
+                        ++modCount;
+                    }
+                    break;
+                }
+
+                // 如果没找到key对应结点e, 则继续遍历
+                e = e.next;
+            }
+
+            // 如果e为null, 说明first链表中不存在key对应的元素, 则头插法插入一个新的entry
+            else {
+                // 如果node结点不为null, 说明node结点已经提前创建了, 则头插法插入到桶头结点即可
+                if (node != null)
+                    node.setNext(first);
+                // 如果node结点为null, 说明node结点没有提前创建, 则在桶头位置创建node结点
+                else
+                    node = new HashEntry<K,V>(hash, key, value, first);
+
+                // node结点添加到桶头结点后, 如果当前segment的实际大小大于阈值, 且容量小于最大容量, 则扩容当前segment的散列表table
+                int c = count + 1;
+                if (c > threshold && tab.length < MAXIMUM_CAPACITY)
+                    // 由于这里已经对当前segment进行上锁了, 也就是当前table不会被其他线程更改, 因此扩容也是线程安全的
+                    // 扩容当前segment的散列表, 重新计算每个链表的hash值, 并分成高低链表转移到新表中, 最后把要插入的node结点也插入到新表中, 更新当前segment的散列表为新表
+                    rehash(node);
+
+                // 如果当前segment的散列表不需要扩容, 则通过Unsafe方法更新主内存中tab表i位置的元素为e
+                else
+                    setEntryAt(tab, index, node);
+
+                // 最后更新修改模数、实际大小, 设置旧值为null, 代表插入成功, 结束遍历
+                ++modCount;
+                count = c;
+                oldValue = null;
+                break;
+            }
+        }
+    } finally {
+        // 最后释放segment锁
+        unlock();
+    }
+
+    // 返回null代表添加成功, 返回旧值代表key对应结点已存在, 当onlyIfAbsent为false则还发生了值替换
+    return oldValue;
+}
+```
+
+###### 删除元素方法
+
+- **remove（Object，int，Object）**：**获取当前segment锁后**， 删除散列表中指定key对应的结点，如果指定了value则key、value都匹配才能删除结点。删除成功则返回旧值，否则返回null。
+
+```java
+// 获取当前segment锁后, 删除散列表中指定key对应的结点, 如果指定了value则key、value都匹配才能删除结点, 删除成功则返回旧值, 否则返回null
+final V remove(Object key, int hash, Object value) {
+    // 快速失败方式获取当前segment锁, 如果获取失败, 则自旋获取当前segment锁, 自旋期间不会尝试创建node结点但会遍历e链表, 如果自旋次数超过最大值还会阻塞获取锁, 直到获取到锁才返回
+    if (!tryLock())
+        scanAndLock(key, hash);
+    V oldValue = null;
+
+    try {
+        // 到这里, 当前线程获取到了当前segment锁, segment散列表tab, hash值表索引为index
+        HashEntry<K,V>[] tab = table;
+        int index = (tab.length - 1) & hash;
+
+        // 通过Unsafe方法获取主内存中tab表i位置的元素e, 前驱pred
+        HashEntry<K,V> e = entryAt(tab, index);
+        HashEntry<K,V> pred = null;
+
+        // 如果e不为null, 说明需要遍历e链表, e键k, e后继next, e值v
+        while (e != null) {
+            K k;
+            HashEntry<K,V> next = e.next;
+
+            // 如果e键等于key, 或者e的hash值等于hash且e键equals key, 说明e就是要找的结点
+            if ((k = e.key) == key || (e.hash == hash && key.equals(k))) {
+                V v = e.value;
+
+                // 如果没有指定value, 说明e就是要找的结点, 需要删除
+                // 如果指定了value, 则还需要匹配value是否相等, 如果e值等于value, 或者e值equals value, 说明e就是要找的结点, 需要删除
+                if (value == null || value == v || value.equals(v)) {
+                    // 如果前驱为null, 说明e为桶头结点, 则更新后继作为桶头结点, 脱钩e结点
+                    if (pred == null)
+                        setEntryAt(tab, index, next);
+                    // 如果前驱不为null, 说明e不为桶头结点, 则链接前驱与后继, 脱钩e结点
+                    else
+                        pred.setNext(next);
+
+                    // 删除成功后, 则更新修改模数、更新实际大小、设置旧值为e值v, 结束遍历
+                    ++modCount;
+                    --count;
+                    oldValue = v;
+                }
+                break;
+            }
+            pred = e;
+            e = next;
+        }
+    } finally {
+        // 最后释放segment锁
+        unlock();
+    }
+
+    // 删除成功则返回旧值, 否则返回null
+    return oldValue;
+}
+
+```
+
+##### 添加元素方法
+
+所有方法**key和value都不能为null**，且底层都依赖Segment#put（K，int，V，boolean）方法。
+
+- **put（K，V）**：根据key的hash值选择segment后, 获取当前segment锁后, 往其散列表添加key-value条目(**允许值替换**), 并且如果插入后散列表实际大小超过阈值, 则还会发生扩容。
+- **putIfAbsent（K，V）**：根据key的hash值选择segment后, 获取当前segment锁后, 往其散列表添加key-value条目(**不允许值替换**), 并且如果插入后散列表实际大小超过阈值, 则还会发生扩容。
+- **putAll（Map）**：添加复制集合的的所有键值对，**底层依赖put（K，V）允许值替换**。
+
+```java
+// 根据key的hash值选择segment后, 获取当前segment锁后, 往其散列表添加key-value条目(允许值替换), 并且如果插入后散列表实际大小超过阈值, 则还会发生扩容
+public V put(K key, V value) {
+    Segment<K,V> s;
+    if (value == null) throw new NullPointerException();
+
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = hash(key);
+
+    // 相当于取hash的高ssize位数值 % (ssize-1)，得到hash在segment中的索引
+    int j = (hash >>> segmentShift) & segmentMask;
+
+    // 获取索引元素，通过UNSAFE方法，直接获取Segment[]中第j个对象
+    if ((s = (Segment<K,V>)UNSAFE.getObject (segments, (j << SSHIFT) + SBASE)) == null)
+        // 如果第j个对象为null, 则创建它并通过CAS记录在segment[j]中
+        s = ensureSegment(j);
+
+    // 获取第j个Segment后, 则获取当前segment锁后, 往其散列表添加key-value条目, onlyIfAbsent为true代表只允许key对应结点不存在时才添加, 为false代表key对应结点已存在时可以发生值替换; 如果插入后散列表实际大小超过阈值, 则还会发生扩容
+    return s.put(key, hash, value, false);
+}
+
+// 根据key的hash值选择segment后, 获取当前segment锁后, 往其散列表添加key-value条目(不允许值替换), 并且如果插入后散列表实际大小超过阈值, 则还会发生扩容
+public V putIfAbsent(K key, V value) {
+    Segment<K,V> s;
+    if (value == null)
+        throw new NullPointerException();
+
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = hash(key);
+
+    // 相当于取hash的高ssize位数值 % (ssize-1)，得到hash在segment中的索引
+    int j = (hash >>> segmentShift) & segmentMask;
+
+    // 获取索引元素，通过UNSAFE方法，直接获取Segment[]中第j个对象
+    if ((s = (Segment<K,V>)UNSAFE.getObject(segments, (j << SSHIFT) + SBASE)) == null)
+        // 如果第j个对象为null, 则创建它并通过CAS记录在segment[j]中
+        s = ensureSegment(j);
+
+    // 获取第j个Segment后, 则获取当前segment锁后, 往其散列表添加key-value条目, onlyIfAbsent为true代表只允许key对应结点不存在时才添加, 为false代表key对应结点已存在时可以发生值替换; 如果插入后散列表实际大小超过阈值, 则还会发生扩容
+    return s.put(key, hash, value, true);
+}
+
+// 添加复制集合的的所有键值对
+public void putAll(Map<? extends K, ? extends V> m) {
+    for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+        // 根据key的hash值选择segment后, 获取当前segment锁后, 往其散列表添加key-value条目(允许值替换), 并且如果插入后散列表实际大小超过阈值, 则还会发生扩容
+        put(e.getKey(), e.getValue());
+}
+
+```
+
+##### 删除元素方法
+
+- **remove（Object）**：如果key存在，则从此映射中删除该key对应的映射，忽略value值。
+- **remove（Object，Object）**：删除key和value都equals的键值对，value值必须匹配。
+
+```java
+// 如果key存在，则从此映射中删除该key对应的映射，忽略value值
+public V remove(Object key) {
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = hash(key);
+
+    // 获取给定hash值的段
+    Segment<K,V> s = segmentForHash(hash);
+
+    // 获取当前segment锁后, 删除散列表中指定key对应的结点, 删除成功则返回旧值, 否则返回null
+    return s == null ? null : s.remove(key, hash, null);
+}
+
+// 删除key和value都equals的键值对，value值必须匹配
+public boolean remove(Object key, Object value) {
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int hash = hash(key);
+    Segment<K,V> s;
+
+    // 获取给定hash值的段, 获取当前segment锁后, 删除散列表key、value都匹配的结点, 删除成功则返回旧值, 否则返回null
+    return value != null && (s = segmentForHash(hash)) != null && s.remove(key, hash, value) != null;
+}
+```
+
+##### 获取元素方法
+
+- **get（Object）**：获取指定键映射到的值，如果此映射不包含键的映射，则返回 {@code null}。
+
+```java
+// 获取指定键映射到的值，如果此映射不包含键的映射，则返回 {@code null}
+public V get(Object key) {
+    Segment<K,V> s; // 手动集成访问方法，以减少开销
+    HashEntry<K,V>[] tab;
+
+    // HashCode扰动函数, key为String类型则返回key的32位哈希码即可, 否则哈希种子异或k的散列码, 再把结果高位的特征和低位的特征组合起来，降低哈希冲突的概率，也就是说，尽量做到任何一位的变化都能对最终得到的结果产生影响
+    int h = hash(key);
+
+    // 获取h对应Segment[]中的对象偏移u, 根据u获取主内存中的Segment对象s
+    long u = (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE;
+    if ((s = (Segment<K,V>)UNSAFE.getObjectVolatile(segments, u)) != null && (tab = s.table) != null) {
+        // 然后根据h对应s中散列表tab中的对象偏移, 获取主内存中的HashEntry结点e, 遍历e链表
+        for (HashEntry<K,V> e = (HashEntry<K,V>) UNSAFE.getObjectVolatile(tab, ((long)(((tab.length - 1) & h)) << TSHIFT) + TBASE); e != null; e = e.next) {
+            K k;
+
+            // 如果e键等于key, 或者e的hash值等于h且e键equals k, 说明e结点就是要找的结点, 则返回e值即可
+            if ((k = e.key) == key || (e.hash == h && key.equals(k)))
+                return e.value;
+        }
+    }
+
+    // 确认没找到key对应的结点, 则返回null
+    return null;
+}
+```
+
+##### 元素统计方法
+
+- **size（）**：
+  - 返回此映射中键值映射的数量，如果Map包含多个Integer.MAX_VALUE元素，则只返回**Integer.MAX_VALUE**。
+  - **先不加锁统计2次**，取前2次统计到的修改模数作比较：
+    - 如果相等，说明没有发生并发修改，size统计结果正确，则结束自旋，返回size或Integer.MAX_VALUE。
+    - 如果不等，说明发生了并发修改，则创建每个Segment并加锁统计，统计后返回size或Integer.MAX_VALUE。
+
+```java
+// 避免size（）、containsValue （）在表进行连续修改时无限制的重试
+static final int RETRIES_BEFORE_LOCK = 2;
+
+// 返回此映射中键值映射的数量Map包含多个Integer.MAX_VALUE元素，则只返回Integer.MAX_VALUE: 先不加锁统计2次, 如果前2次统计到的修改模数不等, 说明发生了并发修改, 则创建每个Segment并加锁统计
+public int size() {
+    // 段数组segments, ConcurrentHashMap实际大小size, int数值是否溢出overflow, 每次统计的修改模数sum, 上一次的修改模数last, 自旋retries
+    final Segment<K,V>[] segments = this.segments;
+    int size;
+    boolean overflow;
+    long sum;
+    long last = 0L;
+    int retries = -1;
+
+    try {
+        // 开始自旋
+        for (;;) {
+            // 如果自旋次数达到加锁前最大自旋次数2, 说明前2次的统计模数发生了变化, 此时需要加锁统计了, 则遍历segments, 对于j段如果不存在, 则创建它并通过CAS记录在segment[j]中, 并阻塞式地对j段Segment进行加锁
+            if (retries++ == RETRIES_BEFORE_LOCK) {
+                for (int j = 0; j < segments.length; ++j)
+                    ensureSegment(j).lock(); // force creation
+            }
+
+            // 初始化每次的修改模数统计sum，实际大小size，是否溢出overflow
+            sum = 0L;
+            size = 0;
+            overflow = false;
+
+            // 如果segment都加锁完毕后, 则再次遍历每一段Segment
+            for (int j = 0; j < segments.length; ++j) {
+                // 获取主内存的Segment[j]对象seg
+                Segment<K,V> seg = segmentAt(segments, j);
+
+                // 如果esg不为null, 说明其上的散列表元素需要做统计, 统计其修改模数sum, 统计其实际大小c, size叠加每个c的结果
+                if (seg != null) {
+                    sum += seg.modCount;
+                    int c = seg.count;
+
+                    // 如果最高位为1, 此时为负数, 小于0, 说明溢出了
+                    if (c < 0 || (size += c) < 0)
+                        overflow = true;
+                }
+            }
+
+            // 如果统计两次, 修改模数都相等, 说明size统计正确, 则结束自旋
+            if (sum == last)
+                break;
+
+            // 如果修改模数不相等, 或者还没统计两次以上, 则需要再次统计
+            last = sum;
+        }
+    } finally {
+        // 统计完毕, 如果自旋次数有大于2, 说明每段Segment都上了锁, 则释放每段Segment的锁
+        if (retries > RETRIES_BEFORE_LOCK) {
+            for (int j = 0; j < segments.length; ++j)
+                segmentAt(segments, j).unlock();
+        }
+    }
+
+    // 如果int值溢出, 则返回MAX_VALUE, 否则返回正常的统计结果size
+    return overflow ? Integer.MAX_VALUE : size;
 }
 ```
 
