@@ -260,6 +260,13 @@ public interface TransferQueue<E> extends BlockingQueue<E> {
 - 继承AbstractList抽象类，实质上是个List集合。**没有实现Queue接口，只是通过在方法内抛出异常，来局限只能执行队列操作，从而看起来像是遵守Queue接口的规范**。
 - 底层通过数组实现，head和tail指针都是数组索引，而不是链表结点。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
+- add、remove、get方法的(tail + 1) % capacity或者(head + 1) % capacity，表示**ArrayQueue是个循环队列**，因此tail索引位置有可能在head索引位置前面。
+- add和remove都是通过移动数组的索引指针实现，不会引起内部数组的拷贝，**效率较高**。
+- 但数组大小是提前确定的，无法自动扩容，**需要手动调用resize（）来扩容**，因此ArrayQueue不太适合当前队列个数未知的情况。
+
+##### 数据结构
+
+![1625384213088](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625384213088.png)
 
 ##### 构造方法
 
@@ -301,7 +308,7 @@ public abstract class AbstractList<E> extends AbstractCollection<E> implements L
 
 ##### 扩容方法
 
-当前类不会触发扩容，而是在com.sun.jmx.remote.internal.ArrayNotificationBuffer#resize中触发。
+数组大小是提前确定的，无法自动扩容，**需要手动调用resize（）来扩容**，因此ArrayQueue不太适合当前队列个数未知的情况。
 
 ```java
 public void resize(int newcapacity) {
@@ -383,6 +390,10 @@ public T get(int i) {
 - 不是线程安全的，在没有外部同步的情况下，不支持多个线程并发访问。
 - 用作堆栈时，此类**可能**比{@link Stack}更快，而用作队列时，此类**可能**比{@link LinkedList}更快。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
+
+##### 数据结构
+
+![1625385358934](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625385358934.png)
 
 ##### 构造方法
 
@@ -473,11 +484,11 @@ private void doubleCapacity() {
         throw new IllegalStateException("Sorry, deque too big");
     Object[] a = new Object[newCapacity];
     // Object src, int srcPos, Object dest, int destPos, int length
-    System.arraycopy(elements, p, a, 0, r);// 复制右边部分数组
-    System.arraycopy(elements, 0, a, r, p);// 复制左边部分数组
+    System.arraycopy(elements, p, a, 0, r);// 复制右边部分数组，到新数组的左边
+    System.arraycopy(elements, 0, a, r, p);// 复制左边部分数组，到新数组的右边
     elements = a;
-    head = 0;
-    tail = n;
+    head = 0;// head指向数组开头
+    tail = n;// head指向数据结尾
 }
 ```
 
@@ -507,6 +518,7 @@ public boolean offer(E e) {
 public void addFirst(E e) {
     if (e == null)
         throw new NullPointerException();
+    // head前移
     elements[head = (head - 1) & (elements.length - 1)] = e;
     if (head == tail)
         doubleCapacity();
@@ -517,6 +529,7 @@ public void addLast(E e) {
     if (e == null)
         throw new NullPointerException();
     elements[tail] = e;
+    // tail后移
     if ( (tail = (tail + 1) & (elements.length - 1)) == head)
         doubleCapacity();
 }
@@ -586,12 +599,14 @@ public E pollFirst() {
     if (result == null)
         return null;
     elements[h] = null;     // Must null out slot
+    // head后移
     head = (h + 1) & (elements.length - 1);
     return result;
 }
 
 // Deque接口方法，删除队尾元素，如果队列为空，不会抛出异常，而是返回null
 public E pollLast() {
+    // tail前移
     int t = (tail - 1) & (elements.length - 1);
     E result = (E) elements[t];
     if (result == null)
@@ -706,6 +721,10 @@ public E peekLast() {
 - 是非线程安全的，需要线程安全时考虑{@link java.util.concurrent.PriorityBlockingQueue}。
 - 入队和出队方法（{@code offer}，{@code poll}，{@code remove（）}和{@code add}）提供O（log（n））时间； {@code remove（Object）}和{@code contains（Object）}方法的线性时间，即O(n)；检索方法的固定时间（{@code peek}，{@code element}和{@code size}）即O(1)。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
+
+##### 数据结构
+
+![1625385813923](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625385813923.png)
 
 ##### 构造方法
 
@@ -1127,6 +1146,10 @@ public E peek() {
 - **允许队列操作更新迭代器状态**。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
 
+##### 数据结构
+
+![1625386241468](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625386241468.png)
+
 ##### 构造方法
 
 - **指定容量的构造函数**：默认非公平方式。
@@ -1437,6 +1460,10 @@ final E itemAt(int i) {
 - LinkedBlockingQueue容量未指定时，默认为Integer＃MAX_VALUE，将会导致每次插入时动态创建链接节点，直至超出容量，所以一般往往在构造时指定容量，防止队列拥有过多元素。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
 - 简而言之，其实现可参考LinkedBlocking + 实现Deque的思路，由于太类似，所以不做多描述了。
+
+##### 数据结构
+
+![1625386428269](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625386428269.png)
 
 ##### 构造方法
 
@@ -1901,6 +1928,10 @@ public class LinkedBlockingDeque<E> extends AbstractQueue<E> implements Blocking
 - **队头的元素是队列中“最小”的元素**，如果并列存在多个相同的元素，则此时是不稳定的。
 - 迭代器**不保证**方法{@link #iterator（）}中提供的Iterator以任何特定顺序遍历优先级队列的元素。 如果需要有序遍历，请考虑使用{@code Arrays.sort（pq.toArray（））}。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
+
+##### 数据结构
+
+![1625386699340](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625386699340.png)
 
 ##### 构造方法
 
@@ -2413,6 +2444,10 @@ public E peek() {
 - 底层依赖PriorityQueue无界优先级队列，所以DelayQueue也是无界的。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
 
+##### 数据结构
+
+![1625387092187](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625387092187.png)
+
 ##### 构造方法
 
 - **空参的构造函数**：什么也不做。
@@ -2684,6 +2719,10 @@ public E peek() {
 - 基于**数组快照方式**的迭代器，但不会以任何特定顺序返回元素，因为最小堆只能保证堆顶最小，而不能保证孩子结点中的顺序。
 - 队列没有替换元素的方法，且获取元素方法都是检索栈顶的元素。
 
+##### 数据结构
+
+其实现参考PrioritygQueue，也是最小堆实现。但存储的元素为Runnable元素。
+
 ##### 构造方法
 
 - 无参的构造函数：默认的，什么也没做。
@@ -2748,6 +2787,10 @@ private void grow() {
 - 同步队列**非常适合切换设计**，在该设计中，在一个线程中运行的对象必须与在另一个线程中运行的对象同步以便向其传递一些信息，事件或任务。
 - 支持可选的公平性策略，用于正在等待的已订阅的生产者和使用者线程。 **默认情况下是非公平的**。可以通过使用公平性设置为{@code true}构造的队列将按FIFO顺序授予线程访问权限。
 - 利用自旋 + LockSupport方式阻塞 + CAS乐观锁方式实现栈或者队列结构，全程没有使用悲观锁也能保证同步，吞吐量高。
+
+##### 数据结构
+
+见栈结构实现、队列结构实现。
 
 ##### 构造方法
 
@@ -3273,6 +3316,10 @@ public E peek() {
 - 此外，批量操作 {@code addAll}、{@code removeAll}、{@code retainAll}、{@code containsAll}、{@code equals} 和{@code toArray} 不能保证以原子方式执行。 例如，与 {@code addAll} 操作同时运行的迭代器可能只查看一些添加的元素。
 - 队列没有替换元素的方法，且获取元素方法都是检索队头的元素。
 
+##### 流程图
+
+![1625387632438](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625387632438.png)
+
 ##### 构造方法
 
 - **无参的构造函数**：什么也不做。
@@ -3706,6 +3753,10 @@ final Node succ(Node p) {
 - 同时，也不能保证批量操作{@code addAll}，{@code removeAll}，{@code keepAll}，{@code containsAll}与{@code equals}和{@code toArray}的原子执行。例如，**与{@code addAll}操作同时运行的迭代器可能仅能查看一部分添加的元素**。
 - 队列没有替换元素的方法，且获取元素方法都是检索队头的元素。
 
+##### 数据结构
+
+![1625387896358](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625387896358.png)
+
 ##### 构造方法
 
 - **无参的构造函数**：构造空的头（尾）结点。
@@ -3798,7 +3849,6 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E> implements Queue<
 public Iterator<E> iterator() {
     return new Itr();
 }
-
 ```
 
 ##### 扩容方法
@@ -4063,6 +4113,12 @@ public E peek() {
 - 与大多数集合不同，**{@code size}方法不是恒定时间操作O（1）**， 由于这些队列的异步性质，**确定当前元素数需要对元素进行遍历**，因此，如果在遍历期间修改了此集合，则可能会出现不同的结果。
 - 同时，也不能保证批量操作{@code addAll}，{@code removeAll}，{@code keepAll}，{@code containsAll}与{@code equals}和{@code toArray}的原子执行。例如，**与{@code addAll}操作同时运行的迭代器可能仅能查看一部分添加的元素**。
 - 队列没有替换元素的方法，且获取元素方法都是检索队头的元素。
+
+##### 数据结构
+
+![1625388536195](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625388536195.png)
+
+![1625388427297](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625388427297.png)
 
 ##### 构造方法
 

@@ -1,6 +1,6 @@
 ## 源码篇
 
-### List？
+### List
 
 List，**有序集合**（也称为序列）。此接口的用户可以精确控制列表中每个元素的插入位置。用户**可以通过其整数索引（在列表中的位置）访问元素**，并在列表中搜索元素。
 
@@ -53,8 +53,11 @@ public interface List<E> extends Collection<E> {
 - ArrayList底层基于数组实现，**支持对元素进行快速随机访问，适合随机查找和遍历**，不适合大量插入和删除。**允许null元素**。
 - **默认初始大小为10**，当数组容量不够时，会触发扩容机制（**扩大到当前的1.5倍**），需要将原来数组的数据复制到新的数组中。当从 ArrayList 的中间位置插入或者删除元素时，需要对数组进行复制、移动、代价比较高。
 - 非线程安全的，如果要使用同步的List方法，可以考虑使用Collections＃synchronizedList进行包装。
-
 - 迭代器是快速失败的。
+
+##### 数据结构
+
+![1625388805056](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625388805056.png)
 
 ##### 构造方法
 
@@ -307,6 +310,10 @@ public E set(int index, E element) {
 - 非线程安全的，如果要使用同步的List方法，可以考虑使用Collections＃synchronizedList进行包装。
 - **实现了List、Queue、Deque接口，还提供了堆栈的方法**，所以可以把LinkedList看作是List、Queue、Deque和Stack。作为队列时，不会有替换元素的方法，且获取元素方法都是检索栈顶的元素。
 - 迭代器是快速失败的。
+
+##### 数据结构
+
+![1625388924748](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625388924748.png)
 
 ##### 构造方法
 
@@ -806,6 +813,10 @@ public E set(int index, E element) {
 - ArrayList的线程安全变体，其中所有可变操作（add、remove、set方法）都**通过对基础数组进行全新复制来实现**，不需要扩容机制。
 - 在**无法或不想同步遍历**而又需要防止并发线程之间的干扰时很有用。
 - **基于数组快照方式查找数据**，所有迭代操作都没有并发修改检查，不需要快速失败，但不支持add、remove、set方法，会抛出**UnsupportedOperationException**。
+
+##### 数据结构
+
+![1625389231993](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625389231993.png)
 
 ##### 构造方法
 
@@ -1371,6 +1382,10 @@ public E set(int index, E element) {
 - 与新的集合实现不同，**{@ code Vector}是同步的**。 如果不需要线程安全的实现，建议使用{@link ArrayList}代替{@code Vector}。
 - 迭代器是快速失败的。
 
+##### 数据结构
+
+![1625389453472](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625389453472.png)
+
 ##### 构造方法
 
 - **空参的构造函数**：默认容量为10，默认容量增速为0，即扩容时增长2倍。
@@ -1635,6 +1650,10 @@ public synchronized void setElementAt(E obj, int index) {
 
 - **Stack类表示对象的后进先出（LIFO）堆栈**。 它通过五个操作扩展了Vector类，这些操作允许将Vector视为堆栈。 提供了通常的push和pop方法，一种查看堆栈顶部元素的peek方法，一种判断堆栈是否为空的empty方法，和一种查找指定元素距离堆栈底部高度的search方法。 
 - 首次创建堆栈时，不做任何实现。添加元素时，从顶部开始添加。
+
+##### 数据结构
+
+![1625389842793](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625389842793.png)
 
 ##### 构造方法
 

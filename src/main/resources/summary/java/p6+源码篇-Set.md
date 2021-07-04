@@ -1,6 +1,6 @@
 ## 源码篇
 
-### Set？
+### Set
 
 Set，不包含重复元素的集合，最多包含一个空元素。
 
@@ -39,6 +39,10 @@ public interface Set<E> extends Collection<E> {
 - 非线程安全的，如果要使用同步的Set方法，可以考虑使用Collections＃synchronizedSet进行包装。
 - 迭代器是快速失败的。
 - **Set集合没有获取和替换元素的方法。**
+
+##### 数据结构
+
+![1625390302606](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625390302606.png)
 
 ##### 构造方法
 
@@ -126,11 +130,22 @@ abstract class HashIterator {
 - add（E）：添加元素到集合中，交由成员变量引用HashMap#put（K，V）实现。以元素的值为HashMap.Entry的键，以Object PRESENT = new Object();空对象作为HashMap.Entry的值。
 
 ```java
+private static final Object PRESENT = new Object();// 用作HashMap中元素的假值
+
 // 添加元素到集合中
 public boolean add(E e) {
     return map.put(e, PRESENT)==null;
-}
-// HashMap#put（K，V）
+} 
+/**
+ * HashMap#put（K，V）
+ *
+ * hash: 指key的hash值（hashCode扰动后的结果）
+ * key：指key的值
+ * value：指value的值
+ * onlyIfAbsent：为true时代表不能替换旧值，为false时则可以替换旧值
+ * evict：为true时代表散列表处于非创建模式中，为false时则散列表处于创建模式中（用于LinkedHashMap 
+ *        结点插入后的回调访问函数，对于HashMap本身没用）
+ */
 public V put(K key, V value) {
     return putVal(hash(key), key, value, false, true);
 }
@@ -145,7 +160,17 @@ public V put(K key, V value) {
 public boolean remove(Object o) {
     return map.remove(o)==PRESENT;
 }
-// HashMap#remove（Object）：key的hash值相等 或者 Key值equal
+
+/**
+ * HashMap#remove（Object）：key的hash值相等 或者 Key值equal
+ *
+ * hash：key的hash值 
+ * key：key值
+ * value：如果matchValue为true则匹配的value值，否则忽略value值。
+ * matchValue：为true代表则仅在值相等时才删除，为false代表值不相等也可以删除
+ * movable：为true代表删除时可以移动其他结点，为false代表在删除时不能移动其他结点
+ *         （只有迭代器的删除方法movable才会为false）
+ **/
 public V remove(Object key) {
     Node<K,V> e;
     return (e = removeNode(hash(key), key, null, false, true)) == null ?

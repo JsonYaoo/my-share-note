@@ -1,6 +1,6 @@
 ## 源码篇
 
-### Map？
+### Map
 
 - Map，是将**键映射到值**的对象，映射不能包含重复的键， 每个键最多可以映射到一个值。
 
@@ -275,6 +275,10 @@ public interface ConcurrentNavigableMap<K,V> extends ConcurrentMap<K,V>, Navigab
   - 如果要在一个HashMap实例中存储许多映射，应该创建时指定足够大的容量，而不是让它根据需要时，才执行重建散列表操作。
 - **HashMap是非同步的**，在多个线程并发访问时，通常是通过同步一些自然封装映射的对象来完成，比如Collections.synchronizedMap。
 - **HashMap的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。
+
+##### 数据结构
+
+![1625373206969](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625373206969.png)
 
 ##### 构造方法
 
@@ -1914,6 +1918,10 @@ final TreeNode<K,V> find(int h, Object k, Class<?> kc) {
 - **LinkedHashMap是非同步的**，在多个线程并发访问时，通常是通过同步一些自然封装映射的对象来完成，比如Collections.synchronizedMap。
 - **LinkedHashMap的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。
 
+##### 数据结构
+
+![1625373689741](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625373689741.png)
+
 ##### 构造方法
 
 LinkedHashMap所有的构造方法都依赖父类HashMap的构造方法，除了有者同样定义的**默认初始容量16和默认负载因子0.75**外，还定义了一个条目“最近”的访问顺序（**访问顺序为true，代表访问后会移动元素到链表末尾，插入顺序为false，代表不作任何移动，保持为插入顺序**）。
@@ -2170,6 +2178,10 @@ public V getOrDefault(Object key, V defaultValue) {
   Collections.synchronizedSortedMap。
 - **TreeMap的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。
 - NavigableMap接口的方法，返回的是 **{@code Map.Entry} 生成时的映射快照**，因此不支持可选的 {@code Entry#setValue} 方法，但{@code Map#put} 方法可以更改其映射值。
+
+##### 数据结构
+
+![1625374171000](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625374171000.png)
 
 ##### 构造方法
 
@@ -3513,6 +3525,10 @@ public SortedMap<K,V> tailMap(K fromKey) {
 - **WeakHashMap是非同步的**，在多个线程并发访问时，通常是通过同步一些自然封装映射的对象来完成，比如Collections.synchronizedMap。
 - **WeakHashMap的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。
 
+##### 数据结构
+
+![1625375845586](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625375845586.png)
+
 ##### 构造方法
 
 - **空参的构造方法**：使用默认初始容量(16) 和 默认负载因子(0.75) 构造一个新的空WeakHashMap(而HashMap的无参构造方法的初始容量是在resize方法中初始化的)。
@@ -4223,6 +4239,10 @@ public abstract class Dictionary<K,V> {
 - **{@code Hashtable} 是同步的**，如果不需要线程安全的实现，建议使用 {@link HashMap} 代替 {@code Hashtable}， 如果需要线程安全的高并发实现，则建议使用 {@link java.util.concurrent.ConcurrentHashMap} 代替 {@code Hashtable}。
 - **Hashtable的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。但**Hashtable 的keys()和elements()返回的Enumeration不是快速失败的**。
 
+##### 数据结构
+
+![1625376138026](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625376138026.png)
+
 ##### 构造方法
 
 - **空参的构造方法**：构造一个具有默认初始容量 (11) 和负载因子 (0.75) 的新的空哈希表。
@@ -4634,6 +4654,10 @@ public synchronized V getOrDefault(Object key, V defaultValue) {
 - ConcurrentHashMap可以用作**可扩展的频率图**（直方图或多重集的形式）：通过使用 {@link java.util.concurrent.atomic.LongAdder}以及通过{@link #computeIfAbsent computeIfAbsent} 初始化。
   - 例如，要将计数添加 {@code ConcurrentHashMap<String,LongAdder> freqs}，可以使用{@code freqs.computeIfAbsent(k -> new LongAdder()).increment();}。
 - ConcurrentHashMaps支持一组顺序和并行的批量操作，与大多数 {@link Stream} 方法不同，这些操作旨在**线程安全**且明智地应用，即使其他线程并发更新映射，例如，在计算共享 注册表中值的快照摘要时。
+
+##### 数据结构
+
+![1625372983062](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625372983062.png)
 
 ##### 构造方法
 
@@ -6977,6 +7001,21 @@ final Node<K,V> find(int h, Object k) {
 - ConcurrentSkipListMap，与大多数集合不同，**{@code size} 方法不是恒定时间O（n）操作**，因为映射的异步性质，确定当前元素数量需要遍历元素，因此如果在遍历期间修改此集合，则可能会报告不准确的结果。
 - 此外，**批量操作** {@code putAll}、{@code equals}、{@code toArray}、{@code containsValue} 和 {@code clear} **并不能保证以原子方式执行**。例如，与 {@code putAll} 操作并发运行的迭代器可能仅查看一些添加的元素。
 
+##### SkipList跳表性质
+
+- 跳表由**多层链表**组成：
+  - 一层数据层，多层索引层，**head指针指向最高层的索引头结点**。
+  - 数据结点含有3个指针，key指针指向Key对象，value指针指向Value对象，next指针指向下一个数据结点。
+  - 索引结点含有3个指针，node指针指向level 0的数据结点，down指针指向level-1的索引结点，right指针指向相同level的索引结点。
+  - 其中level是通过一定的概率随机产生的（**索引层级越高，出现的概率越低**，level 1: 50%, level 2: 25%, level 3: 12.5%...）。
+- 每一层都是一个**有序链表**，默认为自然排序，也可以指定Comparator排序。
+- level 0为**数据层**，数据层含有所有元素。level 0以上都为**索引层**，索引层的结点随机选取。
+- 高级别索引的元素集是低级别索引元素集的一个子集，索引的元素集又是数据的元素集的一个子集，即**level 0是任何level的一个并集**。
+
+##### 数据结构
+
+![1624546428005](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1624546428005.png)
+
 ##### 构造方法
 
 - **无参构造函数**：创建一个空的排序映射，根据其键的自然顺序排序。
@@ -7081,19 +7120,6 @@ public class ConcurrentSkipListMap<K,V> extends AbstractMap<K,V> implements Conc
     }
 }
 ```
-
-##### SkipList跳表性质
-
-- 跳表由**多层链表**组成：
-  - 一层数据层，多层索引层，**head指针指向最高层的索引头结点**。
-  - 数据结点含有3个指针，key指针指向Key对象，value指针指向Value对象，next指针指向下一个数据结点。
-  - 索引结点含有3个指针，node指针指向level 0的数据结点，down指针指向level-1的索引结点，right指针指向相同level的索引结点。
-  - 其中level是通过一定的概率随机产生的（**索引层级越高，出现的概率越低**，level 1: 50%, level 2: 25%, level 3: 12.5%...）。
-- 每一层都是一个**有序链表**，默认为自然排序，也可以指定Comparator排序。
-- level 0为**数据层**，数据层含有所有元素。level 0以上都为**索引层**，索引层的结点随机选取。
-- 高级别索引的元素集是低级别索引元素集的一个子集，索引的元素集又是数据的元素集的一个子集，即**level 0是任何level的一个并集**。
-
-![1624546428005](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1624546428005.png)
 
 ##### 顺序Map构建SkipList
 
@@ -8511,6 +8537,10 @@ public SubMap<K,V> tailMap(K fromKey) {
   Collections.synchronizedMap。
 - **HashMap的所有迭代器都是快速失败的**，即如果在创建迭代器后的任何时间对结构进行结构修改，则除了通过迭代器自己的remove方法之外，该迭代器都将抛出{ @link ConcurrentModificationException}，这在面对并发修改时，迭代器可以快速干净地失败，而不是在未来不确定的时间冒着任意、非确定性行为的风险去修改。但是**无法保证迭代器的快速失败行为**，因为一般而言，在存在非同步并发修改的情况下，不可能做出任何硬保证，**只会尽最大努力抛出**ConcurrentModificationException，因此，编写一个依赖于这个异常来保证其正确性的程序是错误的，**快速失败行为只适用于检测错误**。
 
+##### 数据结构
+
+![1625372230001](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1625372230001.png)
+
 ##### 构造方法
 
 - **空参的构造方法**：构造一个具有默认初始容量 (16) 和默认负载因子 (0.75) 的空 HashMap。
@@ -8907,7 +8937,7 @@ void transfer(Entry[] newTable, boolean rehash) {
             
             int i = indexFor(e.hash, newCapacity);
 
-            // 头插法
+            // 头插法：注意！头插法转移元素会使用的当前链表元素顺序反转，导致并发扩容时会出现next出现在e前面的情况，从而出现循环链表。而JDK8 HashMap中的分高低位链表转移方式，既可以解决key需要重新计算索引，也可以解决循环链表的出现。
             e.next = newTable[i];
             newTable[i] = e;
 
