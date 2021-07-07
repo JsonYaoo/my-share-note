@@ -5456,7 +5456,7 @@ final Node<K,V>[] helpTransfer(Node<K,V>[] tab, Node<K,V> f) {
 
 扩容的核心方法，在addCount、helpTransfer方法中，会底层调用transfer方法。
 
-- **transfer（Node，Node）**：
+- **transfer（Node[]，Node[]）**：
   - **转移旧散列表tab中的结点到新散列表nextTab中**，如果nextTab还没创建则先扩容(创建nextTab)。
   - 如果nextTab已创建，则转移线程步骤为：
     - 划分转移区间 -> i为转移结点 -> 继续前进划分转移区间。
@@ -5985,7 +5985,7 @@ public V getOrDefault(Object key, V defaultValue) {
 
 ##### 红黑树化指定index桶
 
-- **treeifyBin（Node，int）**：红黑树化index对应桶中的普通链表，重构hash桶中的普通单向Node链表为**双向无环TreeNode链表**，并在最后使用TreeBin包装root结点放到index桶中。
+- **treeifyBin（Node[]，int）**：红黑树化index对应桶中的普通链表，重构hash桶中的普通单向Node链表为**双向无环TreeNode链表**，并在最后使用TreeBin包装root结点放到index桶中。
 
 ```java
 // 红黑树化index对应桶中的普通链表
@@ -6106,7 +6106,7 @@ static final class TreeBin<K,V> extends Node<K,V> {
     TreeNode<K,V> root;// 红黑树根结点
     volatile TreeNode<K,V> first;// 链表形式的头结点(等于红黑树根结点)
     volatile Thread waiter;// 等待写锁的线程
-    volatile int lockState;// 红儿黑锁状态
+    volatile int lockState;// 读写锁状态
     static final int WRITER = 1;// 持有写锁时设置
     static final int WAITER = 2;// 等待写锁时设置
     static final int READER = 4;// 设置读锁的增量值
@@ -6202,7 +6202,7 @@ static final class TreeBin<K,V> extends Node<K,V> {
 // CAS方式设置lockState为1(持有写锁), 如果CAS设置成功, 说明当前线程获取到写锁, 此时直接返回即可; 如果CAS设置失败, 说明当前线程获取不到写锁, 此时需要继续争抢写锁
 private final void lockRoot() {
     if (!U.compareAndSwapInt(this, LOCKSTATE, 0, WRITER))
-        contendedLock(); // offload to separate method 卸载到分离方法
+        contendedLock();
 }
 
 /**
