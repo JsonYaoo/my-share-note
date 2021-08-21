@@ -2721,7 +2721,7 @@ public E peek() {
 
 ##### 数据结构
 
-其实现参考PrioritygQueue，也是最小堆实现。但存储的元素为Runnable元素。
+其实现参考PriorityBlockingQueue，也是最小堆实现。但存储的元素为Runnable元素。
 
 ##### 构造方法
 
