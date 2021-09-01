@@ -8925,7 +8925,6 @@ void transfer(Entry[] newTable, boolean rehash) {
 
     // 遍历散列表, 当前遍历到的桶e
     for (Entry<K,V> e : table) {
-
         // 遍历e链表, 如果哈希种子有变化, 则重新每个e结点的hash值, 重新计算哈希索引i, 并设置到新散列表i桶中
         while(null != e) {
             Entry<K,V> next = e.next;
