@@ -1,0 +1,106 @@
+1、修改静态IP：
+vi /etc/sysconfig/network-scripts/ifcfg-ens33
+
+TYPE=Ethernet
+PROXY_METHOD=none
+BROWSER_ONLY=no
+BOOTPROTO=static
+=> DEFROUTE=yes
+IPV4_FAILURE_FATAL=no
+IPV6INIT=yes
+IPV6_AUTOCONF=yes
+IPV6_DEFROUTE=yes
+IPV6_FAILURE_FATAL=no
+IPV6_ADDR_GEN_MODE=stable-privacy
+NAME=ens33
+UUID=8ebf0bf9-240e-4de4-80b0-8ae2a2b609d4
+DEVICE=ens33
+=> ONBOOT=yes
+=> IPADDR=192.168.1.140
+=> NETMASK=255.255.255.0
+=> GATEWAY=192.168.1.1
+#DNS1=202.96.134.133
+#DNS2=202.96.128.166
+=> DNS1=192.168.1.1
+	
+2、重启网络：
+systemctl restart network
+ping www.baidu.com
+
+3、修改HostNme：
+vi /etc/hostname
+node-140
+
+4、修改Hosts：
+vi /etc/hosts
+192.168.1.140 node-140
+
+5、重启虚拟机，改用ssh连接
+reboot
+
+6、安装vim：
+yum -y install vim
+
+7、安装ifconfig：
+yum -y install net-tools
+
+8、安装telnet
+yum list telnet*
+yum -y install telnet-server.*
+yum -y install telnet
+
+9、安装unzip：
+yum -y install unzip zip
+
+10、安装nslookup：
+yum -y install bind-utils
+
+11、安装killall
+yum -y install psmisc
+
+12、安装wget
+yum -y install wget
+
+13、安装rz sz
+yum -y install lrzsz
+
+14、安装lsof
+yum -y install lsof
+
+15、安装git
+yum -y install git
+
+16、同步阿里云时间
+yum -y install ntp
+ntpdate -u time1.aliyun.com
+
+17、安装解压缩.tar.bz2支持
+yum -y install bzip2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
