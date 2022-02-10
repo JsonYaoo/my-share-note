@@ -4993,3 +4993,2946 @@ public interface Client {
 }
 ```
 
+### 2.0. 详细介绍 Hystrix？
+
+#### 背景
+
+1. 当一个服务调用另一个服务时，由于网络或者自身等原因，在调用期间出现问题，调用者就会一直等待被调用者的响应，当越来越多的服务请求到这些出问题的资源，则会导致更多的请求等待，从而发生**雪崩效应**。
+2. **雪崩效应**是指，在微服务项目中，由于微服务之间调用是互通的，高并发的数据库访问量会导致服务线程阻塞，使单个服务宕机时，其服务的不可用会蔓延到其他服务，引起整体服务不可用的灾难性后果。
+   - **举例**：电商系统很多模块都依赖营销优惠服务，其负载可谓非常之高，如果这个服务出现了异常，导致响应超时，那么所有依赖它的下游系统的响应时间都会被拉长，从而引发一个滚雪球的雪崩效应，由最上游的系统问题，引发一系列下游系统响应超时，最终导致整个系统被拖垮。
+3. 其中，雪崩效应产生的**根本原因**是，由于 Tomcat 在默认情况下，只有一个线程池来维护接收到的请求，此时，如果某接口在某时刻被大量访问，就会占据 Tomcat 线程池中的所有线程（即**请求处理资源耗尽**），使得其他请求处于等待状态，无法连接到服务接口。
+   - **解决方案**：扩容、限流、增加硬件监控、排查代码问题，使用 Hystrix 进行资源隔离、熔断降级、快速失败等。
+
+#### 概念
+
+1. Hystrix，中文含义为豪猪，因其背上长满棘刺，从而拥有了自我保护的能力，基于此特征的引申，Netflix 公司在分布式微服务架构的践行下，将其保护服务的稳定性而设计的**断路器熔断解决方案**，称之为 Hystrix。
+2. Hystrix，是 SpringCloud 中一个防止服务雪崩的**容错框架**，具有**服务降级、服务熔断、服务隔离、服务监控**等技术，从而实现服务保护的效果。
+   - **服务降级**：接口调用失败时，为了防止客户端一直等待，其不会再处理业务代码，而是直接返回一个友好的提示给客户端，即调用接口提前定义好的**降级方法**，比如返回一个 NULL。
+   - **服务熔断**：
+     1. 服务熔断，是在服务降级的基础上，做的一个更直接的保护方式。
+     2. 指在统计时间范围内，请求失败数达到了阈值 `requestVolumeThreshold`  + 请求错误率也达到了阈值 `errorThresholdPercentage` 时， 则打开断路器，使得之后的请求直接走**降级方法**，不再走业务代码，并且，在 `sleepWindowInMilliseconds` 后尝试恢复。
+   - **服务隔离**：
+     1. 指隔离服务资源间的相互影响，使得在高并发的场景下，不影响到其他服务。
+     2. 服务隔离有**线程池和信号量**两种实现方式，一般使用线程池方式，即为隔离的服务开启一个独立的线程池。
+   - **服务监控**：比如接口调用时，把每秒请求数、成功请求数、失败请求数、请求拒绝数等运行指标都记录下来。
+
+#### 架构原理
+
+##### 服务降级
+
+假如  HystrixClient 调用目标请求时发生了异常，此时 Hystrix 会自动把该请求转发到**降级逻辑**中，由于服务调用方来编写异常处理逻辑，比如**调用超时**等。
+
+![1644325501264](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644325501264.png)
+
+##### 服务熔断
+
+- 服务熔断是建立在服务降级之上的一个异常处理措施，可以看作是服务降级的升级版，引入了一种**断路器（熔断器）**的机制，当断路器打开时，对服务的调用请求不会发送到目标服务节点，而是直接转向**降级逻辑**中。
+
+  ![1644325922862](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644325922862.png)
+
+- 断路器，可以显著缓解由 QPS （Query Per Second，每秒访问请求，用于衡量系统当前压力）激增导致的雪崩效应，断路器打开后，由于请求直接转向降级逻辑，而不会发起服务调用，因此会大幅降低承压服务的系统压力，熔断打开状态的判断维度有：
+
+  - 在一定时间窗口内，发生异常的请求数量达到临界值 `circuitBreaker.requestVolumeThreshold`，默认为 20。
+  - 在一定时间窗口内，发生异常的请求数量占请求总数量的一定比例 `circuitBreaker.errorThresholdPercentage`，默认为 50。
+
+  | 状态      | 作用                                                         |
+  | --------- | ------------------------------------------------------------ |
+  | OPEN      | 打开状态，服务熔断中，在一段时间内不得像外部发起服务调用，调用者想调用该服务则会一律走到降级逻辑中 |
+  | HALF-OPEN | 半开状态，可尝试发起一个真实的服务调用，但一切都会被监视着，调用失败的从新回到打开状态，等待下一次半开状态 |
+  | CLOSED    | 关闭状态，上一步调用成功了，则可以停止服务熔断，重新恢复正常 |
+
+##### 线程隔离
+
+- Hystrix 通过线程隔离的方案，将执行服务调用的代码，和容器本身的线程池进行隔离，同时允许配置每个服务所需线程的最大数量，使得即便一个服务的线程池被吃满，也不会影响其他服务。
+
+  ![1644326225115](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644326225115.png)
+
+- Hystrix 提供了两种线程隔离的方式，分别是线程池技术和信号量技术，两者业务流程上是一致的，在默认情况下，Hystrix 使用的是**线程池**的方式。
+
+|            | 概念                                                         | 超时判定                                             | 性能                                                         | 使用场景                                                     |
+| ---------- | ------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 线程池技术 | 使用 Hystrix 内建的线程池去执行方法调用，而不是使用容器线程  | 非容器线程，因此可以直接对执行阶段超时做**主动判定** | 涉及线程创建、销毁、任务调度，在资源利用率和效率的角度上看，线程池技术会比较慢 | 一般场景下尽量使用，但要注意线程切换导致的 ThreadLocal 变量的问题 |
+| 信号量技术 | 直接使用容器线程去执行方法，不会另外创建新的线程，只是当开关和计数器的作用，其中，获取到信号量的线程才可以执行方法，没获取到的就会转到降级流程 | 容器线程，只能等待诸如网络请求超时等做**被动判定**   | 没有额外的系统资源开销，性能方面有优势                       | 超高并发下，线程开销大，对接口无需再调用外部服务的场景       |
+
+```properties
+# 切换线程隔离方式为信号量方式
+execution.isolation.strategy = ExecutionIsolationStrategy.SEMAPHORE
+```
+
+#### 使用方式
+
+##### Feign +  Hystrix
+
+```java 
+/**
+ * 测试HystrixFallback降级应用
+ */
+@SpringBootApplication
+@EnableDiscoveryClient
+@EnableFeignClients
+@EnableCircuitBreaker
+public class HystrixFallbackApplication {
+
+    public static void main(String[] args) {
+        new SpringApplicationBuilder(HystrixFallbackApplication.class)
+                .web(WebApplicationType.SERVLET)
+                .run(args);
+    }
+}
+
+/**
+ * 测试HystrixFallback降级服务
+ */
+// 允许Bean同名覆盖: 不配置会报"feign-client.FeignClientSpecification"错误, 因为Feign的代理对象名称是使用里面的服务属性拼凑的, 所以可以配置允许Bean同名覆盖
+//@FeignClient(value = "feign-client", fallback = IFallbackHandler.class)
+@FeignClient(value = "feign-client", fallback = IFallbackHandler.class)
+public interface IHystrixFallbackService extends ICommonService {
+
+}
+
+@Component
+@Slf4j
+public class IFallbackHandler implements IHystrixFallbackService {
+    /**
+     * 直接异常降级实现
+     * @return
+     */
+    @Override
+    public String error() {
+        log.info("Fallback: I'm not a black sheep any more.");
+        return "Fallback: I'm not a black sheep any more.";
+    }
+}
+```
+
+##### @HystrixCommand
+
+```java
+/**
+ * 测试HystrixFallback降级服务: 测试Hystrix RequestCache
+ */
+@Service
+@Slf4j
+public class IRequestCacheService {
+    /**
+     * 使用name作为CacheKey, 只有key同样, 才返回Hystrix上下文缓存:
+     * => 配置口令: 121: 1个HystrixRequestContext上下文, 2个Cache注解@CacheResult和@CacheKey, 1个Command注解@HystrixCommand
+     * @param name
+     * @return
+     */
+    // 指定服务降级的第二种写法
+    @HystrixCommand(commandKey = "requestCache", fallbackMethod = "requestCacheFallback")
+    // 注意@CacheResult是作用在@HystrixCommand注定的方法, 所以还需要配置@HystrixCommand
+    @CacheResult
+    public Friend requestCache(@CacheKey String name){
+        ...
+    }
+    
+    /**
+     * 测试RequestCache降级服务: 可见, Hystrix是通过开启一个新的线程来实现降级的, 两不冲突
+     * => 测试成功, Hystrix降级时, 会打断@HystrixCommand指定的线程
+     * @param name
+     * @return
+     */
+    private Friend requestCacheFallback(String name){...}
+}
+```
+
+#### 使用经验
+
+##### HystrixCommand + 配置中心
+
+1. Hystrix 配置项非常多，如果不对接配置中心，所有配置只能在代码里修改，在集群部署情况下，难以应对紧急情况。
+2. 因此，可以在项目中只设置一个 `CommandKey`，其他配置都在配置中心进行指定，这样出现紧急情况，比如需隔离部分请求时，只需在配置中心进行修改以后，强制更新即可。
+
+##### 降级逻辑 + 手动埋点
+
+1. 当请求失败或者超时，会执行降级逻辑，但如果出现大量的降级，则说明某些服务出问题了。
+2. 此时，可以在降级逻辑中加入手动埋点的操作，上报数据给监控系统，并输出降级日志，统一由日志收集的程序去进行处理。
+3. 这样就可以把问题暴露出去，然后通过实时数据分析进行告警操作。
+
+##### Gateway + 信号量隔离
+
+1. Gateway 网关，是所有请求的入口，路由服务数量会有很多，几十个到上百个都有可能。
+2. 如果用线程池隔离，那么需要创建上百个独立的线程池，开销太大，不建议。
+3. 而用信号量隔离，则开销就小很多，同时还能起到限流的作用。
+
+##### 超时控制
+
+Hystrix的超时时间要⼤于Ribbon的超时时间，因为Hystrix将请求包装了起来，特别需要注意的是，如果Ribbon开启了重试机制，⽐如重试3 次，Ribbon 的超时为 1 秒，那么Hystrix 的超时时间应该⼤于 3 秒，否则就会出现 Ribbon 还在重试中，⽽ Hystrix 已经超时的现象。
+
+##### 常用降级方案
+
+真实项目里的降级逻辑有很多，但目标都是相同的，那就是把异常对系统的影响**降到最低**。
+
+- **静默处理**：所谓的静默处理，就是什么也不干，在降级逻辑中直接返回一个 null。
+- **默认值**：瞒天过海，说一个假话，在并不确定真实结果的情况下，返回一个默认值。
+- **缓存异常**：对于非热点数据，在缓存故障无法处理时，可在降级逻辑里转而访问数据库。
+- **主备切换**：在主从库都发生故障时，可以在降级逻辑里，先于人工干预自动访问备库数据，该场景主要用于主链路接口上，平常不要随意访问备库，以免造成脏读幻读。
+- **重试**：虽然 Ribbon 可以进行超时重试，但对于接口非超时等其他异常，可以在降级逻辑中自己实现重新调用的逻辑。
+- **多级降级**：进入降级逻辑后，如果还发生异常，那么可以对其进行二次、三次等多次降级。
+- **人工干预**：对于一些及其重要的接口，可在降级逻辑中启动人工干预流程，比如日志打点、监控报警、通知人工介入等。
+
+### 2.1. 详细介绍 Sentinel？
+
+#### 概念
+
+Sentinel是⼀个⾯向云原⽣微服务的流量控制、熔断降级组件，可用于替代 Hystrix，针对的问题有：**服务雪崩、服务降级、服务熔断、服务限流**，可不依赖任何框架，通过 UI 界⾯配置即可完成细粒度控制。
+
+#### 优点
+
+![1644385609542](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644385609542.png)
+
+- **丰富的应⽤场景**：Sentinel 承接了阿⾥巴巴近 10 年的双⼗⼀⼤促流量的核⼼场景，例如秒杀、消息削峰填⾕、集群流量控制、实时熔断下游不可⽤应⽤等。
+- **完备的实时监控**：可以看到 500 台以下规模的集群的汇总，也可以看到单机的秒级数据。
+- **⼴泛的开源⽣态**：与 SpringCloud、Dubbo的整合，只需要引⼊相应的依赖并进⾏简单的配置即可快速地接⼊ Sentinel。
+
+#### 使用方式
+
+##### 流控 | HelloWorld
+
+```java
+/**
+ * Sentinel快速入门
+ */
+public class HelloWorld {
+
+    /**
+     * 用于流控测试的资源名称
+     */
+    public static final String RESOURCE_NAME = "helloworld";
+
+    /**
+     * 初始化流控规则
+     */
+    private static void initFlowRules() {
+        ArrayList<FlowRule> flowRules = new ArrayList<>();
+        FlowRule flowRule = new FlowRule();
+
+        // 注意, 记得把规则和资源绑定起来, 一般一个规则对应一个资源, 但也可以一个规则对应多个资源
+        flowRule.setResource(RESOURCE_NAME);
+
+        // 设置QPS维度的流控规则
+        flowRule.setGrade(RuleConstant.FLOW_GRADE_QPS);
+
+        // 设置QPS为20个
+        flowRule.setCount(20);
+
+        // 交由流控管理器管理
+        flowRules.add(flowRule);
+        FlowRuleManager.loadRules(flowRules);
+    }
+
+    /**
+     * 	对主流的5种流控策略做了 底层的抽象和资源的封装
+     *
+     * 	对于规则： FlowRule 、DegradeRule、ParamFlowRule、SystemRule、AuthorityRule
+     * 	对于管理器：FlowRuleManager、DegradeRuleManager、ParamFlowRuleManager、SystemRuleManager、AuthorityRuleManager
+     *  对于异常：FlowException、DegradeException、ParamFlowException、SystemBlockException、AuthorityException
+     */
+    public static void main(String[] args) throws InterruptedException {
+        // 0. 引入Maven依赖
+        /**
+         *         <dependency>
+         *             <groupId>com.alibaba.csp</groupId>
+         *             <artifactId>sentinel-core</artifactId>
+         *             <version>1.8.2-SNAPSHOT</version>
+         *         </dependency>
+         */
+
+        // 1. 定义规则
+        initFlowRules();
+
+        // 2. 定义资源
+        while (true) {
+            // 流控的Entry
+            Entry entry = null;
+            try {
+                // 2.1. 定义资源名称
+                entry = SphU.entry(RESOURCE_NAME);
+
+                // 2.2. 执行业务代码
+                System.out.println("执行业务代码...");
+                Thread.sleep(20);
+            } catch (BlockException e) {
+                // 2.3. 抛出异常, 表示被流控住了, 执行流控逻辑
+                System.err.println("要访问的资源被流控了, 执行流控逻辑!");
+            } finally {
+                if(entry != null){
+                    // 2.4. 关闭资源
+                    entry.exit();
+                }
+            }
+        }
+
+        // 3. 查看结果
+
+        // 4. 配置控制台
+    }
+}
+```
+
+##### 降级 | HelloWorld
+
+```java
+/**
+ * 初始化降级规则
+ */
+private static void initDradeRules() {
+    ArrayList<DegradeRule> degradeRules = new ArrayList<>();
+    DegradeRule degradeRule = new DegradeRule();
+    degradeRule.setResource("com.jsonyao.sentinel.controller.IndexController:degrade:test");
+    degradeRule.setGrade(RuleConstant.DEGRADE_GRADE_EXCEPTION_COUNT);
+    degradeRule.setCount(2);
+    degradeRules.add(degradeRule);
+    DegradeRuleManager.loadRules(degradeRules);
+}
+```
+
+##### 流控 | 注解
+
+```java
+// 切面@Around代理@SentinelResource
+@Configuration
+public class AopConfiguration {
+    @Bean
+    public SentinelResourceAspect sentinelResourceAspect() {
+        return new SentinelResourceAspect();
+    }
+}
+
+/**
+ * 测试注解设置流控
+ */
+@Service
+public class FlowService {
+
+    /**
+     * 测试注解设置流控
+     *
+     * 	blockHandler: 流控降级异常的时候进入的兜底函数
+     *  fallback: 抛出业务异常的时候进入的兜底函数
+     *  (1.6.0 之前的版本 fallback 函数只针对降级异常（DegradeException）进行处理，不能针对业务异常进行处理)
+     *
+     * @return
+     */
+    @SentinelResource(
+            value = "com.jsonyao.sentinel.service.FlowService:flow",
+            // 资源调用的流量类型, 表示控制出口流量, 注意系统规则只会对入口流量生效
+            entryType = EntryType.OUT,
+            blockHandler = "flowBlockHandler"
+//            , fallback = ""
+    )
+    public String flow() {
+        System.err.println("----> 正常执行flow方法");
+        return "flow";
+    }
+
+    /**
+     * 触发流控
+     * @param ex
+     * @return
+     */
+    public String flowBlockHandler(BlockException ex) {
+        System.err.println("----> 触发流控策略:" + ex);
+        return "执行流控方法";
+    }
+}
+```
+
+##### 降级 | 注解
+
+```java
+// 切面@Around代理@SentinelResource
+@Configuration
+public class AopConfiguration {
+    @Bean
+    public SentinelResourceAspect sentinelResourceAspect() {
+        return new SentinelResourceAspect();
+    }
+}
+
+/**
+ * 测试注解降级流控
+ */
+@Service
+public class DegradeService {
+
+    /**
+     * 用于测试注解降级流控
+     */
+    private AtomicInteger counts = new AtomicInteger(0);
+
+    /**
+     * 测试注解降级流控
+     *
+     * 	blockHandler: 流控降级异常的时候进入的兜底函数
+     *  fallback: 抛出业务异常的时候进入的兜底函数
+     *  (1.6.0 之前的版本 fallback 函数只针对降级异常（DegradeException）进行处理，不能针对业务异常进行处理)
+     *
+     * @return
+     */
+    @SentinelResource(
+            value = "com.jsonyao.sentinel.service.DegradeService:degrade",
+            // 资源调用的流量类型, 表示控制出口流量, 注意系统规则只会对入口流量生效
+            entryType = EntryType.OUT,
+            blockHandler = "degradeBlockHandler",
+            fallback = "degradeFallback"
+    )
+    public String degrade() {
+        System.err.println("----> 正常执行degrade方法");
+
+        if(counts.incrementAndGet() % 2 == 0){
+            throw new RuntimeException("抛出业务异常");
+        }
+
+        return "degrade";
+    }
+
+    /**
+     * 触发降级流控
+     * @param ex
+     * @return
+     */
+    public String degradeBlockHandler(BlockException ex) {
+        System.err.println("----> 触发降级流控策略:" + ex);
+        return "执行降级流控方法";
+    }
+
+    /**
+     * 触发业务异常降级
+     * @param t
+     * @return
+     */
+    public String degradeFallback(Throwable t) {
+        System.err.println("----> 触发异常时的降级策略:" + t);
+        return "执行异常降级方法";
+    }
+}
+
+```
+
+##### 流控 | 控制台
+
+```java
+@RestController
+public class IndexController {
+    /**
+     * 用于流控测试的资源名称
+     */
+    public static final String RESOURCE_NAME = "helloworld";
+
+    /**
+     * 控制台流控测试： 控制台配置、读取规则
+     * @return
+     */
+    @RequestMapping("/flow")
+    public String flow(){
+        // 1. 定义规则 => main方法中加载
+//        initFlowRules();
+
+        // 2. 定义资源
+        Entry entry = null;// 流控的Entry
+        try {
+            // 2.1. 定义资源名称
+            entry = SphU.entry(RESOURCE_NAME);
+
+            // 2.2. 执行业务代码
+            System.out.println("执行业务代码...");
+            Thread.sleep(20);
+        } catch (BlockException e) {
+            // 2.3. 抛出异常, 表示被流控住了, 执行流控逻辑
+            System.err.println("要访问的资源被流控了, 执行流控逻辑!");
+        } catch (InterruptedException e) {
+
+        } finally {
+            if(entry != null){
+                // 2.4. 关闭资源
+                entry.exit();
+            }
+        }
+
+        return "flow";
+    }
+}
+```
+
+##### 降级 | 控制台
+
+```java
+@RestController
+public class IndexController {
+    /**
+     * 用于流控测试的资源名称
+     */
+    public static final String RESOURCE_NAME = "helloworld";
+
+    /**
+     * 控制台降级测试: 控制台配置、读取规则
+     * @return
+     */
+    public AtomicInteger counts = new AtomicInteger(0);
+    @RequestMapping("/degrade")
+    public String degrade() {
+        Entry entry = null;// 流控的Entry
+        try {
+            String resourceName = "com.jsonyao.sentinel.controller.IndexController:degrade:test";
+            entry = SphU.entry(resourceName);
+
+            System.out.println("执行业务代码...");
+            if(counts.getAndIncrement() % 2 == 0){
+                Thread.sleep(100);
+            }
+
+            Thread.sleep(20);
+        } catch (BlockException e) {
+            System.err.println("要访问的资源被流控了, 执行流控逻辑!");
+        } catch (InterruptedException e) {
+
+        } finally {
+            if(entry != null){
+                entry.exit();
+            }
+        }
+
+        return "degrade";
+    }
+}
+```
+
+#### Sentinel vs Hystrix
+
+1. **机制不同**：Sentinel 不会像 Hystrix 那样，只在半开状态才放过⼀个请求尝试⾃我修复，就是明明确确地**按时间窗⼝**来，熔断触发后，时间窗⼝内拒绝请求，时间窗⼝后就恢复。
+2. **更方便**：Sentinel Dashboard 中添加的规则数据存储在内存，微服务停掉规则数据就消失，在⽣产环境下不合适，可以将 Sentinel 规则数据持久化到 Nacos **配置中⼼**，让微服务从配置中心获取。
+3. **其他区别**：
+
+| 维度           | Sentinel                                       | Hystrix                       |
+| -------------- | ---------------------------------------------- | ----------------------------- |
+| 隔离策略       | 信号量                                         | 线程池/信号量                 |
+| 熔断降级策略   | 基于响应时间、基于失败比率                     | 基于失败比率                  |
+| 实时指标实现   | 滑动窗口                                       | 滑动窗口（RxJava）            |
+| 扩展性         | 多个扩展点                                     | 插件的形式                    |
+| 限流           | 基于 QPS，支持基于调用关系的限流               | 不支持                        |
+| 流量整形       | 支持慢启动、匀速器模式                         | 不支持                        |
+| 系统负载保护   | 支持                                           | 不支持                        |
+| 控制台         | 开箱即用，可配置规则、查看秒级监控、机器发现等 | 不完善                        |
+| 常见框架的适配 | Servlet、Spring Cloud、Dubbo、gRPC             | Servlet、Spring Cloud Netflix |
+
+### 2.2. 详细介绍 Config？
+
+#### 概念
+
+![1644387119633](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644387119633.png)
+
+Config，Spring Cloud 官方指定配置中心，在配置管理方面主要提供了三个功能：
+
+- **统一配置**：提供了一个中心化的配置方案，将各个项目中的配置内容，集中在 Config Server 一端。
+- **环境隔离**：Config Server 提供了多种环境隔离机制，Client 可以根据自身所处的项目环境（比如测试、生产等）加载对应的配置文件。
+- **动态刷新**：支持**运行期间**动态改变配置属性。
+
+#### 架构原理
+
+##### Config Server 原理
+
+![1644387439409](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644387439409.png)
+
+###### 1、自动装配
+
+1）启动类
+
+```java
+/**
+ * 配置中心: 可拉取远端的配置文件
+ */
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigServerApplication {
+
+    public static void main(String[] args) {
+        new SpringApplicationBuilder(ConfigServerApplication.class)
+                .web(WebApplicationType.SERVLET)
+                .run(args);
+    }
+
+    //    获取配置文件的不同URL姿势，都是GET请求, 如果不指定{label}的话默认用master
+    // 1. http://localhost:60000/{label}/{application}-{profile}.* (yml, properties, json)
+    // 2. http://localhost:60000/{application}/{profile}/{label}
+}
+```
+
+2）@EnableConfigServer
+
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Import(ConfigServerConfiguration.class)
+public @interface EnableConfigServer {
+
+}
+```
+
+3）org.springframework.cloud.config.server.config.ConfigServerConfiguration
+
+```java
+@Configuration
+public class ConfigServerConfiguration {
+
+	@Bean
+	public Marker enableConfigServerMarker() {
+		return new Marker();
+	}
+
+	class Marker {
+
+	}
+
+}
+```
+
+4）org.springframework.cloud.config.server.config.ConfigServerConfiguration.Marker
+
+```java
+@Configuration
+public class ConfigServerConfiguration {
+
+	@Bean
+	public Marker enableConfigServerMarker() {
+		return new Marker();
+	}
+
+	class Marker {
+
+	}
+
+}
+```
+
+5）org.springframework.cloud.config.server.config.ConfigServerAutoConfiguration
+
+```java
+@Configuration
+@ConditionalOnBean(ConfigServerConfiguration.Marker.class)
+@EnableConfigurationProperties(ConfigServerProperties.class)
+@Import({ 
+    	// 环境仓库配置
+    	EnvironmentRepositoryConfiguration.class, 
+    	CompositeConfiguration.class,
+		ResourceRepositoryConfiguration.class, ConfigServerEncryptionConfiguration.class,
+    	// Rest接口配置
+		ConfigServerMvcConfiguration.class })
+public class ConfigServerAutoConfiguration {
+
+}
+
+```
+
+###### 2、环境仓库配置
+
+```java
+...
+public class EnvironmentRepositoryConfiguration {
+    ...
+    // 支持JDBC、SVN、GITHUB和本地文件，默认基于GITHUB
+	@Configuration
+	@ConditionalOnClass(TransportConfigCallback.class)
+	static class JGitFactoryConfig {
+
+		@Bean
+		public MultipleJGitEnvironmentRepositoryFactory gitEnvironmentRepositoryFactory(
+				ConfigurableEnvironment environment, ConfigServerProperties server,
+				Optional<ConfigurableHttpConnectionFactory> jgitHttpConnectionFactory,
+				Optional<TransportConfigCallback> customTransportConfigCallback) {
+			return new MultipleJGitEnvironmentRepositoryFactory(environment, server,
+					jgitHttpConnectionFactory, customTransportConfigCallback);
+		}
+
+	}
+
+	@Configuration
+	@ConditionalOnClass({ HttpClient.class, TransportConfigCallback.class })
+	static class JGitHttpClientConfig {
+
+		@Bean
+		public ConfigurableHttpConnectionFactory httpClientConnectionFactory() {
+			return new HttpClientConfigurableHttpConnectionFactory();
+		}
+
+	}
+    ...
+}
+```
+
+###### 3、对外 REST 接口
+
+1）org.springframework.cloud.config.server.config.ConfigServerMvcConfiguration}
+
+```java
+@Configuration
+@ConditionalOnWebApplication
+public class ConfigServerMvcConfiguration extends WebMvcConfigurerAdapter {
+    ...
+	@Bean
+	public EnvironmentController environmentController(
+			EnvironmentRepository envRepository, ConfigServerProperties server) {
+		EnvironmentController controller = new EnvironmentController(
+				encrypted(envRepository, server), this.objectMapper);
+		controller.setStripDocumentFromYaml(server.isStripDocumentFromYaml());
+		controller.setAcceptEmpty(server.isAcceptEmpty());
+		return controller;
+	}
+
+	@Bean
+	@ConditionalOnBean(ResourceRepository.class)
+	public ResourceController resourceController(ResourceRepository repository,
+			EnvironmentRepository envRepository, ConfigServerProperties server) {
+		ResourceController controller = new ResourceController(repository,
+				encrypted(envRepository, server));
+		return controller;
+	}
+    ...
+}
+```
+
+##### Config Client 原理
+
+- **配置 `${value}`**：某个属性的值，在配置文件中使用 `${value}` 来配置，放到 bootstrap.yml 中配置的话，可以使得其在所有文件加载前加载，从而保证程序顺利完成启动。
+
+- **初始化 `${value}`**：
+
+  ![1644388710373](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644388710373.png)
+
+###### 1、SpringBoot 构建 Context
+
+```java
+public class SpringApplication {
+    public ConfigurableApplicationContext run(String... args) {
+        ...
+        prepareContext(context, environment, listeners, applicationArguments,
+					printedBanner);
+        ...
+    }
+    
+    private void prepareContext(ConfigurableApplicationContext context,
+      ConfigurableEnvironment environment, SpringApplicationRunListeners listeners, ApplicationArguments applicationArguments, Banner printedBanner) {
+        ...
+		applyInitializers(context);
+        ...
+    }
+    
+	protected void applyInitializers(ConfigurableApplicationContext context) {
+		for (ApplicationContextInitializer initializer : getInitializers()) {
+			Class<?> requiredType = GenericTypeResolver.resolveTypeArgument(
+					initializer.getClass(), ApplicationContextInitializer.class);
+			Assert.isInstanceOf(requiredType, context, "Unable to call initializer.");
+			initializer.initialize(context);
+		}
+	}
+}
+```
+
+###### 2、加载 initializer
+
+```java
+@Configuration
+@EnableConfigurationProperties(PropertySourceBootstrapProperties.class)
+public class PropertySourceBootstrapConfiguration implements
+    ApplicationContextInitializer<ConfigurableApplicationContext>, Ordered {
+   	@Override
+    public void initialize(ConfigurableApplicationContext applicationContext) {
+        ...
+        for (PropertySourceLocator locator : this.propertySourceLocators) {
+			PropertySource<?> source = null;
+			source = locator.locate(environment);
+			if (source == null) {
+				continue;
+			}
+			logger.info("Located property source: " + source);
+			composite.addPropertySource(source);
+			empty = false;
+		}
+        ...
+    }
+}
+```
+
+###### 3、初始化属性资源
+
+```java
+// 越小优先级越高, 0代表最优先执行
+@Order(0)
+public class ConfigServicePropertySourceLocator implements PropertySourceLocator {
+	@Override
+	@Retryable(interceptor = "configServerRetryInterceptor")
+	public org.springframework.core.env.PropertySource<?> locate(
+        org.springframework.core.env.Environment environment) {
+        	...
+			for (String label : labels) {
+                ...
+				Environment result = getRemoteEnvironment(restTemplate, properties,
+						label.trim(), state);
+                ...
+            }
+        	...
+    	}
+    }
+}	
+```
+
+###### 4、拉取远程文件
+
+```java
+@Order(0)
+public class ConfigServicePropertySourceLocator implements PropertySourceLocator {
+	private Environment getRemoteEnvironment(RestTemplate restTemplate,
+                                             ConfigClientProperties properties, String label, String state) {
+       	String path = "/{name}/{profile}";
+		String name = properties.getName();
+		String profile = properties.getProfile();
+		String token = properties.getToken();
+        ...
+        ResponseEntity<Environment> response = null;
+        ...
+        final HttpEntity<Void> entity = new HttpEntity<>((Void) null, headers);
+        response = restTemplate.exchange(uri + path, HttpMethod.GET, entity,
+                                         Environment.class, args);
+        ...
+    }
+}
+```
+
+##### 属性动态刷新原理
+
+![1644390259593](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644390259593.png)
+
+1. **发送刷新请求**：选择一个服务节点，通过 post 请求 `/actuator/refresh`，此后该节点会向 Config Server 发起一个请求。
+2. **拉取文件**：Config Server 收到上述节点的请求后，默认会访问 GITHUB，拉取最新的配置内容，并把配制文件下载到本地。
+3. **获取更新内容**：服务节点从 ConfigServer 获取并更新配置信息后，然后销毁所有 RefreshScope 作用域的 Bean，由于 @RefreshScope 是懒加载模式，所以下次用到时会重新去 Config Server 中加载。
+
+###### 1、RefreshEndpoint#refresh
+
+```java
+@Endpoint(id = "refresh")
+public class RefreshEndpoint {
+
+	private ContextRefresher contextRefresher;
+
+	public RefreshEndpoint(ContextRefresher contextRefresher) {
+		this.contextRefresher = contextRefresher;
+	}
+
+	@WriteOperation
+	public Collection<String> refresh() {
+		Set<String> keys = this.contextRefresher.refresh();
+		return keys;
+	}
+
+}
+```
+
+###### 2、ContextRefresher#refresh
+
+方法逻辑同《BUS - 作业流程 - RefreshRemoteApplicationEvent#refresh》。
+
+```java
+public class ContextRefresher {
+	public synchronized Set<String> refresh() {
+		Set<String> keys = refreshEnvironment();
+		this.scope.refreshAll();
+		return keys;
+	}
+}
+```
+
+#### 使用方式
+
+##### Config Server
+
+###### POM 依赖
+
+```xml
+<!-- 配置中心化的配置中心: 可拉取远端的配置文件 -->
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-config-server</artifactId>
+    </dependency>
+</dependencies>
+```
+
+###### yml 配置
+
+```yaml
+server:
+  port: 60000
+
+spring:
+  application:
+    name: config-server
+  cloud:
+    # 配置配置中心
+    config:
+      server:
+        # 使用git方式拉取配置文件
+        git:
+          # 强制拉取资源文件, 默认为false
+          force-pull: true
+          # git仓库地址
+          uri: https://github.com/JsonYaoo/config-repo.git
+          # git仓库下配置文件所在的子目录名称: eg => abc, def...
+#          search-paths:
+          # 仓库登录用户名: public项目不需要
+#          username:
+          # 仓库登录用户密码: public项目不需要
+#          password:
+```
+
+###### @EnableConfigServer
+
+```java
+/**
+ * 配置中心: 可拉取远端的配置文件
+ */
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigServerApplication {
+
+    public static void main(String[] args) {
+        new SpringApplicationBuilder(ConfigServerApplication.class)
+                .web(WebApplicationType.SERVLET)
+                .run(args);
+    }
+
+    //    获取配置文件的不同URL姿势，都是GET请求, 如果不指定{label}的话默认用master
+    // 1. http://localhost:60000/{label}/{application}-{profile}.* (yml, properties, json)
+    // 2. http://localhost:60000/{application}/{profile}/{label}
+}
+```
+
+##### Config Client
+
+###### POM 依赖
+
+```xml
+<!-- 配置配置中心的客户端: 拉取配置中心的配置文件属性 -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-config</artifactId>
+</dependency>
+
+<!-- 配置配置中心的客户端: 动态刷新配置文件 -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+
+<!-- 配置高可用的配置中心的客户端: 从Eureka那里拉取配置中心列表 -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+</dependency>
+```
+
+###### yaml 配置
+
+```yaml
+server:
+  port: 61000
+
+spring:
+  application:
+    name: config-client
+  cloud:
+    config:
+      # 指定拉取配置中心中配置文件的applicationName, 默认为spring application name
+      name: config-consumer
+      # 指定基础版的配置中心地址
+#      uri: http://localhost:60000
+      # 指定高可用的配置中心ID
+      discovery:
+        enabled: true
+        service-id: config-server-eureka
+      # 指定拉取的配置文件profile, 但一般是在环境中配置(比如args或者系统环境变量中设置)
+      profile: prod
+      # 指定拉取的配置文件所在的分支, 默认为master
+      label: master
+
+# Eureka注册中心地址
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:20000/eureka/
+
+# Actuator配置: 这里主要是为了能够动态刷新配置文件:
+management:
+  # 已过期, 可不配
+#  security:
+#    enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: always
+
+# 通过拉取到的配置文件中的配置属性, 注入到本地的配置变量中
+myWords: ${words}
+```
+
+###### 测试属性加载
+
+```java
+/**
+ * 配置中心客户端: 前端控制器
+ */
+@RestController
+public class ConfigClientController {
+
+    /**
+     * 测试直接注入配置中心的配置属性
+     */
+    @Value("${name}")
+    private String name;
+
+    /**
+     * 测试配置中心注入到本地配置文件的配置属性
+     */
+    @Value("${myWords}")
+    private String words;
+
+    /**
+     * 测试直接注入配置中心的配置属性
+     * @return
+     */
+    @GetMapping("/name")
+    public String getName(){
+        return name;
+    }
+
+    /**
+     * 测试配置中心注入到本地配置文件的配置属性
+     * @return
+     */
+    @GetMapping("/words")
+    public String getWords(){
+        return words;
+    }
+}
+```
+
+###### 测试属性动态刷新
+
+```java
+/**
+ * 配置中心客户端: 动态刷新配置文件
+ */
+@RestController
+@RequestMapping("/refresh")
+// 运行期进行刷新这个Bean, 在下一次方法调用时会对所有上下游依赖重新注入
+@RefreshScope
+public class ConfigClientRefreshController {
+
+    /**
+     * 测试配置中心动态刷新到本地配置文件的配置属性
+     */
+    @Value("${myWords}")
+    private String words;
+
+    /**
+     * 测试配置中心使用秘钥进行解密
+     */
+    @Value("${food}")
+    private String food;
+
+    /**
+     * 测试配置中心动态刷新到本地配置文件的配置属性
+     * @return
+     */
+    @GetMapping("/words")
+    public String getWords(){
+        return words;
+    }
+
+    /**
+     * 测试配置中心使用秘钥进行解密
+     * @return
+     */
+    @GetMapping("/dinner")
+    public String dinner(){
+        return "May I have on " + food;
+    }
+}
+```
+
+### 2.3. 详细介绍 Bus？
+
+#### 概念
+
+Bus，消息总线，可以将消息变更发送给所有的服务节点，从而实现广播状态更改，比如配置变更或者其他管理指令。
+
+#### 架构原理
+
+##### 作业流程
+
+![1644390995665](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644390995665.png)
+
+- **MQ/Kafka**：BUS 只是一个调用的封装，背后还是需要依赖消息中间件，来完成底层的消息分发，实际项目中最常用的还是 RabbitMQ 和 Kafka。
+- **BUS**：作为对接上游应用和下游中间件系统的中间层，当接到刷新请求时，会通知底层中间件向所有服务节点推送消息。
+- **Refresh 请求**： BUS 节点接收到 refresh 请求后，会发布 RefreshRemoteApplicationEvent 事件，被服务节点监听到后，服务节点会从 ConfigServer 更新配置信息，然后销毁所有 RefreshScope 作用域的 Bean，由于 @RefreshScope 是懒加载模式，所以下次用到时会重新去 Config Server 中加载。
+
+###### 1、请求 bus-refresh
+
+```java
+@Endpoint(id = "bus-refresh") // TODO: document new id
+public class RefreshBusEndpoint extends AbstractBusEndpoint {
+
+	public RefreshBusEndpoint(ApplicationEventPublisher context, String id) {
+		super(context, id);
+	}
+
+	...
+        
+	@WriteOperation
+	public void busRefresh() {
+		publish(new RefreshRemoteApplicationEvent(this, getInstanceId(), null));
+	}
+}
+```
+
+###### 2、BUS 节点发布 RefreshRemoteApplicationEvent
+
+```java
+@SuppressWarnings("serial")
+public class RefreshRemoteApplicationEvent extends RemoteApplicationEvent {
+
+	@SuppressWarnings("unused")
+	private RefreshRemoteApplicationEvent() {
+		// for serializers
+	}
+
+	public RefreshRemoteApplicationEvent(Object source, String originService,
+			String destinationService) {
+		super(source, originService, destinationService);
+	}
+
+}
+
+@SuppressWarnings("serial")
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonIgnoreProperties("source")
+public abstract class RemoteApplicationEvent extends ApplicationEvent {
+	protected RemoteApplicationEvent(Object source, String originService,
+                                     String destinationService) {
+        ...
+    }
+}
+```
+
+###### 3、服务节点监听 RefreshRemoteApplicationEvent
+
+```java
+public class RefreshListener
+		implements ApplicationListener<RefreshRemoteApplicationEvent> {
+
+	private static Log log = LogFactory.getLog(RefreshListener.class);
+
+	private ContextRefresher contextRefresher;
+
+	public RefreshListener(ContextRefresher contextRefresher) {
+		this.contextRefresher = contextRefresher;
+	}
+
+	@Override
+	public void onApplicationEvent(RefreshRemoteApplicationEvent event) {
+		Set<String> keys = this.contextRefresher.refresh();
+		log.info("Received remote refresh request. Keys refreshed " + keys);
+	}
+    
+	public synchronized Set<String> refresh() {
+		Set<String> keys = refreshEnvironment();
+		this.scope.refreshAll();
+		return keys;
+	}
+}
+```
+
+###### 4、服务节点更新配置信息
+
+```java
+public class ContextRefresher {
+	public synchronized Set<String> refreshEnvironment() {
+        // 加载内存中的配置
+		Map<String, Object> before = extract(
+				this.context.getEnvironment().getPropertySources());
+        // 单独启动一个内部容器, 进行新的远程配置加载
+		addConfigFilesToEnvironment();
+        // 交叉对比、更新配置信息
+		Set<String> keys = changes(before,
+			extract(this.context.getEnvironment().getPropertySources())).keySet();
+        // 发布缓存变更事件
+		this.context.publishEvent(new EnvironmentChangeEvent(this.context, keys));
+		return keys;
+	}
+}
+```
+
+###### 5、服务节点销毁 RefreshScope 作用域的 Bean
+
+FactoryBean 对象，下次再获取这些 Refresh Scope 的 Bean 后会重新加载。
+
+```java
+@ManagedResource
+public class RefreshScope extends GenericScope implements ApplicationContextAware,
+ApplicationListener<ContextRefreshedEvent>, Ordered {
+	public void refreshAll() {
+		super.destroy();
+		this.context.publishEvent(new RefreshScopeRefreshedEvent());
+	}
+}
+```
+
+##### 事件对象
+
+```java
+@SuppressWarnings("serial")
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonIgnoreProperties("source")
+public abstract class RemoteApplicationEvent extends ApplicationEvent {
+
+	private static final Object TRANSIENT_SOURCE = new Object();
+
+	private final String originService;
+
+	private final String destinationService;
+
+	private final String id;
+    
+    protected RemoteApplicationEvent(Object source, String originService,
+                                     String destinationService) {
+        ...
+    }
+}
+```
+
+| 维度                | 解释                                                         |
+| ------------------- | ------------------------------------------------------------ |
+| Source              | 必填，包含一个事件想要表达的信息，可以hi一个自定义可被序列化的对象 |
+| Original Service    | 消息来源方，通常是事件发布方的机器 ID 或者 AppID 等          |
+| Destination Serivce | 目标机器，BUS 会根据 Destination Serivce 指定的过滤条件（比如服务名、端口等），只让指定的监听者响应事件 |
+
+##### 消息发布者
+
+BUS 通过 /actuator 对外提供 2 个 endpoint 作为消息发布者，可发布 2 种事件。 
+
+###### bus - env
+
+EnvironmentChangeRemoteApplicationEvent，表示一个远程环境变更事件，事件监听者收到这个事件后，会将事件中的 values 添加到 Spring 环境变量中，由 Spring Cloud 的 EnvironmentManager 负责具体处理，从而达到**修改环境变量**的目的。
+
+```java
+@SuppressWarnings("serial")
+public class EnvironmentChangeRemoteApplicationEvent extends RemoteApplicationEvent {
+
+	private final Map<String, String> values;
+
+	@SuppressWarnings("unused")
+	private EnvironmentChangeRemoteApplicationEvent() {
+		// for serializers
+		this.values = null;
+	}
+
+	public EnvironmentChangeRemoteApplicationEvent(Object source, String originService,
+			String destinationService, Map<String, String> values) {
+		super(source, originService, destinationService);
+		this.values = values;
+	}
+
+	public Map<String, String> getValues() {
+		return this.values;
+	}
+    ...
+}
+```
+
+###### bus - refresh
+
+RefreshRemoteApplicationEvent，表示一个远程配置刷新事件，会触发 **@RefreshScope** 所修饰类中的属性刷新。
+
+```java
+public class RefreshRemoteApplicationEvent extends RemoteApplicationEvent {
+
+	@SuppressWarnings("unused")
+	private RefreshRemoteApplicationEvent() {
+		// for serializers
+	}
+
+	public RefreshRemoteApplicationEvent(Object source, String originService,
+			String destinationService) {
+		super(source, originService, destinationService);
+	}
+
+}
+```
+
+##### 消息监听者
+
+BUS 默认创建了 2 个消息监听器，分别对应上面的两个消息发布 endpoints。
+
+###### bus - env
+
+EnvironmentChangeListener，用于监听远程环境变更事件，将事件中传递的环境变量挨个加入 Spring 本地上下文中。
+
+```java
+public class EnvironmentChangeListener
+		implements ApplicationListener<EnvironmentChangeRemoteApplicationEvent> {
+
+	private static Log log = LogFactory.getLog(EnvironmentChangeListener.class);
+
+	@Autowired
+	private EnvironmentManager env;
+
+	@Override
+	public void onApplicationEvent(EnvironmentChangeRemoteApplicationEvent event) {
+		Map<String, String> values = event.getValues();
+		log.info("Received remote environment change request. Keys/values to update "
+				+ values);
+		for (Map.Entry<String, String> entry : values.entrySet()) {
+			this.env.setProperty(entry.getKey(), entry.getValue());
+		}
+	}
+
+}
+```
+
+###### bus - refresh
+
+RefreshListener，用于监听远程配置刷新事件，底层通过触发 EnvironmentChangeEvent 和 RefreshScopeRefreshedEvent 事件，最终实现**属性刷新**。
+
+```java
+public class RefreshListener
+		implements ApplicationListener<RefreshRemoteApplicationEvent> {
+
+	private static Log log = LogFactory.getLog(RefreshListener.class);
+
+	private ContextRefresher contextRefresher;
+
+	public RefreshListener(ContextRefresher contextRefresher) {
+		this.contextRefresher = contextRefresher;
+	}
+
+	@Override
+	public void onApplicationEvent(RefreshRemoteApplicationEvent event) {
+		Set<String> keys = this.contextRefresher.refresh();
+		log.info("Received remote refresh request. Keys refreshed " + keys);
+	}
+}
+
+public class ContextRefresher {
+	public synchronized Set<String> refresh() {
+		Set<String> keys = refreshEnvironment();
+		this.scope.refreshAll();
+		return keys;
+	}
+    
+	public synchronized Set<String> refreshEnvironment() {
+		Map<String, Object> before = extract(
+				this.context.getEnvironment().getPropertySources());
+		addConfigFilesToEnvironment();
+		Set<String> keys = changes(before,
+				extract(this.context.getEnvironment().getPropertySources())).keySet();
+		this.context.publishEvent(new EnvironmentChangeEvent(this.context, keys));
+		return keys;
+	}
+
+   	public void refreshAll() {
+		super.destroy();
+		this.context.publishEvent(new RefreshScopeRefreshedEvent());
+	}
+}
+```
+
+##### 发布 - 订阅模型
+
+![1644392911868](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644392911868.png)
+
+BUS 事件推送由三个角色构成：
+
+- 事件对象：BUS 事件类，通常是一个 Pojo 对象，包含消费者需要的信息。
+- 事件发布：BUS 消息生产者，将事件对象通过广播的形式发布出去。
+- 事件监听：由 BUS 事件消费者监听 BUS 事件的发布动作，当获取到事件对象后，会调用处理方法进行消费。
+
+###### 1、自定义事件对象
+
+```java
+public class MyEvent extends RemoteApplicationEvent {
+
+   public MyEvent() {
+   }
+
+   public MyEvent(Object body, String originService, String destinationService) {
+       super(body, originService, destinationService);
+   }
+}
+
+```
+
+###### 2、注册事件对象
+
+```java
+@Configuration
+@RemoteApplicationEventScan(basePackageClasses = MyEvent.class)
+public class BusExtConfiguration {
+
+}
+
+```
+
+###### 3、监听事件
+
+```java
+@Component
+public class MyEventListener implements ApplicationListener<MyEvent> {
+    
+    @Override
+    public void onApplicationEvent(MyEvent event) {
+        logger.info("Received MyCustomRemoteEvent - message: ");
+    }
+}
+
+```
+
+###### 4、发布事件
+
+```java
+@PostMapping("/bus/publish/myevent")
+public boolean publishMyEvent(@RequestBody EventBody body) {
+   MyEvent event = new MyEvent(body, applicationContext.getId(), "");
+   try {
+       // 可以注入ApplicationEventPublisher来发送event
+       eventPublisher.publishEvent(event);
+       // 也可以直接使用 
+       // applicationContext.publishEvent(event)
+       return true;   
+   } catch (Exception e) {
+            log.error("failed in publishing event", e);  
+   }  
+   return false;
+}
+
+```
+
+#### 应用场景
+
+- **清空缓存**：通知所有服务监听者清空某项业务的本地缓存信息，也可以在消息体中加入具体的业务属性，使其定点清除某个特定业务对象的缓存。
+- **数据同步**：子系统依赖实时的数据库记录变动，触发相应的业务逻辑，比如可以把 binlog 抓取出来，通过广播功能同步到所有监听器，从而起到数据同步的作用。
+
+### 2.4. 详细介绍 Stream？
+
+#### 概念
+
+Spring Cloud Stream，是基于 Spring Boot 构建的，专门用于**消息驱动服务**所设计的应用框架，底层使用 Spring Integration（一体化） 来为消息代理层提供网络连接支持。
+
+![1644397898722](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644397898722.png)
+
+| 关键词               | 解释                                                         |
+| -------------------- | ------------------------------------------------------------ |
+| 应用模型             | Stream 提供了应用模型的抽象，引入了三个角色，分别是输入通道 Input、输出通道 Output 和通道与底层中间件之间的代理 Binder |
+| 适配层抽象           | Stream 将组件与底层中间件之间的通信过程抽象成了 Binder 层，使得应用层不需要关心底层中间件是 Kafka 还是 RabbitMQ，只需要关注自身的业务逻辑就好 |
+| 插件式适配层         | Binder 层采用一种插件形式来提供服务，开发人员可以很方便地自定义适配逻辑 |
+| 持久化的发布订阅模型 | 发布订阅是所有消息组件最核心的功能                           |
+| 消费组               | Stream 允许将多个 Consumer 加入到一个消费者组，作用是确保一条消息只被组内的一个实例消费 |
+| 分区                 | Stream 支持在多个消费者实例之间创建分区，以便于通过某些特征量做消息分发，保证相同标识的消息**总是**能被同一个消费者处理 |
+
+#### 架构原理
+
+![1644398403640](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644398403640.png)
+
+Stream 体系架构主要包括 Input、Output 和 Binder 三部分组成：
+
+##### Input 通道
+
+Input，输入通道（Spring 输入到消息队列），作用是将消息组件中获取到的 Message 传递给消息者进行消费，使用 Stream 可以在接口中使用 @Iutput 注解，声明并定义一个输出通道。
+
+```java
+public interface MyTopic {
+    @Input
+    SubscribableChannel input();
+}
+```
+
+##### Output 通道
+
+Output，输出通道（消息队列输出到 Spring），作用是把生产者生产的新消息发送到对应的 Topic 中去，使用 Stream 可以在接口中使用 @Output 注解，声明并定义一个输出通道。
+
+```java
+public interface MyTopic {
+
+	// 这里可以给Output自定义目标通道名称，比如@Output("myTarget")
+    @Output
+    MessageChannel output();
+}
+```
+
+##### Binder
+
+- Stream 提供了一个 Binder 抽象层，作为连接外部消息中间件的桥梁，针对每一个不同的 Broker（比如 Kafka 或者 RabbitMQ），Stream 都有一个对应的 Binder 具体实现来做适配。
+- Broker 作为一个适配层，对上层应用程序和底层消息组件之间做了一层屏障，使得应用程序无需关注底层的中间件，只管用注解开启响应的消息通道，剩下的事交给 Binder 来搞定就行。
+- 而在更改底层中间件时，只需要变更 Binder 的依赖项，然后修改配置文件就可以了，对于应用程序来说几乎是无感知的。 
+
+![1644399728162](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644399728162.png)
+
+##### 目的地绑定
+
+如果想要 @Input 和 @Output 使用不同名字，但又想绑定同一个 Topic，那么可以进行目的地绑定配置：
+
+```properties
+spring.cloud.stream.bindings.<@Input名/@Output名>.destination=<Topic名>
+```
+
+#### 使用方式
+
+##### 公共消息实体
+
+```java
+/**
+ * Stream测试应用: 消息实体
+ */
+@Data
+public class MessageBean {
+
+    /**
+     * 消息体
+     */
+    private String payload;
+}
+```
+
+##### 广播消息
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 广播Topic
+ */
+public interface BroadcastTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "broadcastTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "broadcastTopic-producer";
+
+    /**
+     * BroadcastTopic Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * BroadcastTopic Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 配置Stream自定义广播消息Topic: 绑定消费者、生产者信道到broadcastTopic
+spring.cloud.stream.bindings.broadcastTopic-consumer.destination=broadcastTopic
+spring.cloud.stream.bindings.broadcastTopic-producer.destination=broadcastTopic
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {    
+    /**
+     * 快速入门 HelloWord: 测试消费者消费
+     * @param payload
+     */
+    // Stream默认的信道, 用于测试消费者消费
+    @StreamListener(Sink.INPUT)
+    public void consumer(Object payload) {
+        log.info("message consumed successfully, payload={}", payload);
+    }
+
+    /**
+     * 测试自定义广播消息
+     * @param payload
+     */
+    @StreamListener(BroadcastTopic.INPUT)
+    public void consumerBroadcastTopic(Object payload) {
+        log.info("Broadcast message consumed successfully, payload={}", payload);
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private BroadcastTopic broadcastTopic;
+    
+    /**
+     * 测试广播: 写@RequestParams后, 如果value没变, 但入参名称变了还是可以保持请求报文入参不变, 便于维持前端代码不变
+     * @param body
+     */
+    @PostMapping("send")
+    public void sendMessage(@RequestParam(value = "body") String body){
+        Message<String> message = MessageBuilder.withPayload(body).build();
+        broadcastTopic.output().send(message);
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+##### 单播消息
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 单播Topic
+ */
+public interface GroupTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "groupTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "groupTopic-producer";
+
+    /**
+     * Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 测试单播: 绑定消费者、生产者信道到groupTopic
+spring.cloud.stream.bindings.groupTopic-consumer.destination=groupTopic
+spring.cloud.stream.bindings.groupTopic-producer.destination=groupTopic
+
+# 测试单播: 配置消费者分组 => 实际上是一个组一个queue, 每个queue有多个Consumer
+spring.cloud.stream.bindings.groupTopic-consumer.group=GroupA
+
+# 测试单播: 配置消息分区 => 经测试可知, 消息分区和消费组可以合起来使用, 消费组可用来实现单播(组内轮训消费), 消息分区可用来隔离消费组(只有满足条件即SpEL匹配的消费组才能消费消息)
+# 打开消费者的消费分区功能
+spring.cloud.stream.bindings.groupTopic-consumer.consumer.partitioned=true
+# 指定当前消费者实例的总数
+spring.cloud.stream.instance-count=2
+# 指定当前消费者实例的索引号, 最大值为count-1, 用于测试消息分区
+spring.cloud.stream.instance-index=1
+# 指定生产者拥有两个消息分区
+spring.cloud.stream.bindings.groupTopic-producer.producer.partition-count=2
+# SpEL => Key Resolver解析, 表示只有节点为1的消费者才能消费消息, 即SpEL匹配才能消费
+spring.cloud.stream.bindings..groupTopic-producer.producer.partition-key-expression=1
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {    
+    /**
+     * 测试单播消息
+     * @param payload
+     */
+    @StreamListener(GroupTopic.INPUT)
+    public void consumerGroupTopic(Object payload) {
+        log.info("Group message consumed successfully, payload={}", payload);
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private GroupTopic groupTopic;
+    
+    /**
+     * 测试单播
+     * @param body
+     */
+    @PostMapping("sendToGroup")
+    public void sendMessageToGroup(@RequestParam(value = "body") String body){
+        Message<String> message = MessageBuilder.withPayload(body).build();
+        groupTopic.output().send(message);
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+##### 延迟消息
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 延迟Topic，需要中间件支持延迟消息
+ */
+public interface DelayedTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "delayedTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "delayedTopic-producer";
+
+    /**
+     * Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 测试延迟消息: 绑定消费者、生产者信道到delayedTopic
+spring.cloud.stream.bindings.delayedTopic-consumer.destination=delayedTopic
+spring.cloud.stream.bindings.delayedTopic-producer.destination=delayedTopic
+
+# 测试延迟消息: 生产者允许生成延迟交换机与延迟队列(都只有一个)
+spring.cloud.stream.rabbit.bindings.delayedTopic-producer.producer.delayed-exchange=true
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {
+    /**
+     * 测试延迟消息
+     * @param messageBean
+     */
+    @StreamListener(DelayedTopic.INPUT)
+    public void consumerDelayedTopic(MessageBean messageBean) {
+        log.info("Delayed message consumed successfully, payload={}", messageBean.getPayload());
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private DelayedTopic delayedTopic;
+    
+    /**
+     * 测试延迟消息
+     * @param body
+     */
+    @PostMapping("sendDelayedMessage")
+    public void sendDelayedMessage(@RequestParam(value = "body") String body,
+                                   @RequestParam(value = "seconds") Integer seconds){
+        MessageBean msg = new MessageBean();
+        msg.setPayload(body);
+
+        log.info("ready to send delayed message");
+
+        // 注意, Rabbitmq延迟消息必须在header里添加x-delay参数: 表示多少ms后延迟队列会对延迟消息进行消费
+        Message<MessageBean> message = MessageBuilder
+                .withPayload(msg)
+                .setHeader("x-delay", 1000 * seconds)
+                .build();
+        delayedTopic.output().send(message);
+
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+##### 异常重试
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 测试异常重试(单机版), 即在Consumer本地重试, 而不会发回给Rabbitmq
+ */
+public interface ExceptionTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "exceptionTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "exceptionTopic-producer";
+
+    /**
+     * Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 测试测试异常重试(单机版), 即在Consumer本地重试, 而不会发回给Rabbitm: 绑定消费者、生产者信道到exceptionTopic
+spring.cloud.stream.bindings.exceptionTopic-consumer.destination=exceptionTopic
+spring.cloud.stream.bindings.exceptionTopic-producer.destination=exceptionTopic
+
+# 测试测试异常重试(单机版), 即在Consumer本地重试, 而不会发回给Rabbitm: 配置本机重试次数, 次数为1代表不重试
+spring.cloud.stream.bindings.exceptionTopic-consumer.consumer.max-attempts=2
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {
+ 
+    /**
+     * 异常重试计数器
+     */
+    private AtomicInteger count = new AtomicInteger(1);
+
+    @Autowired
+    private ExceptionTopic exceptionTopic;
+    
+    /**
+     * 测试异常重试(单机版), 即在Consumer本地重试, 而不会发回给Rabbitmq
+     * @param messageBean
+     */
+    @StreamListener(ExceptionTopic.INPUT)
+    public void consumerExceptionTopic(MessageBean messageBean) {
+        log.info("Are you OK?");
+
+        // 由于初始值为1, 所以只会重试2次就成功了
+        if(count.incrementAndGet() % 3 == 0){
+            log.info("Fine, thank you. And you?");
+            // 清0, 下次重试测试时, 由于初始值是0, 当重试次数用完还是有异常, 则会一次性抛出所有异常, 否则如果最终能消费成功, 则不会抛出异常
+            count.set(0);
+        } else {
+            log.info("What's your problem?");
+            throw new RuntimeException("I'm not OK!");
+        }
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private ExceptionTopic exceptionTopic;
+    
+    /**
+     * 测试异常重试(单机版), 即在Consumer本地重试, 而不会发回给Rabbitmq
+     * @param body
+     */
+    @PostMapping("sendException")
+    public void sendException(@RequestParam(value = "body") String body){
+        MessageBean msg = new MessageBean();
+        msg.setPayload(body);
+        log.info("ready to send delayed message");
+
+        Message<MessageBean> message = MessageBuilder.withPayload(msg).build();
+        exceptionTopic.output().send(message);
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+##### 重回队列
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 测试异常重试(联机版), 消费者会重新生成把消息投递回队列尾部
+ */
+public interface RequeueTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "requeueTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "requeueTopic-producer";
+
+    /**
+     * Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 测试异常重试(联机版), 消费者会重新生成把消息投递回队列尾部: 绑定消费者、生产者信道到requeueTopic
+spring.cloud.stream.bindings.requeueTopic-consumer.destination=requeueTopic
+spring.cloud.stream.bindings.requeueTopic-producer.destination=requeueTopic
+
+# 测试异常重试(联机版), 消费者会重新生成把消息投递回队列尾部: 对指定Consumer配置重新入队
+#spring.cloud.stream.rabbit.bindings.requeueTopic-consumer.consumer.requeueRejected=true
+# 默认全局开启Direct重新入队(不过会被Consumer重试覆盖)
+#spring.rabbitmq.listener.direct.default-requeue-rejected=true
+# 所以配置Consumer只能重试1次
+spring.cloud.stream.bindings.requeueTopic-consumer.consumer.max-attempts=1
+# 测试不同分组的消费者消费Requeue消息 => 实际上Group、Topic的名称最好都用-作为连接, 而不是驼峰标识
+spring.cloud.stream.bindings.requeueTopic-consumer.group=requeue-group
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {
+    /**
+     * 测试Stream应用: 测试异常重试(联机版), 消费者会重新生成把消息投递回队列尾部
+     * @param messageBean
+     */
+    @StreamListener(RequeueTopic.INPUT)
+    public void consumerRequeueTopic(MessageBean messageBean) {
+        log.info("Are you OK?");
+
+        try {
+            Thread.sleep(3000);
+        } catch (Exception e) {
+            // do nothing
+        }
+
+        throw new RuntimeException("I'm not OK!");
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private RequeueTopic requeueTopic;
+    
+    /**
+     * 测试Stream应用: 测试异常重试(联机版), 消费者会重新生成把消息投递回队列尾部
+     * @param body
+     */
+    @PostMapping("requeue")
+    public void requeue(@RequestParam(value = "body") String body){
+        MessageBean msg = new MessageBean();
+        msg.setPayload(body);
+        log.info("ready to send delayed message");
+
+        Message<MessageBean> message = MessageBuilder.withPayload(msg).build();
+        requeueTopic.output().send(message);
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+##### 死信队列
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 测试死信队列Topic
+ */
+public interface DlqTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "dlqTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "dlqTopic-producer";
+
+    /**
+     * Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 测试死信队列Topic: 绑定消费者、生产者信道到dlqTopic
+spring.cloud.stream.bindings.dlqTopic-consumer.destination=dlqTopic
+spring.cloud.stream.bindings.dlqTopic-producer.destination=dlqTopic
+spring.cloud.stream.bindings.dlqTopic-consumer.consumer.max-attempts=2
+spring.cloud.stream.bindings.dlqTopic-consumer.group=dlq-group
+# 开启死信队列(默认名称为${dlqTopic}.dlq, 复杂的需要自己指定DLK), 允许指定Consumer绑定DLQ
+# => rabbitmq-plugins enable rabbitmq_shovel rabbitmq_shovel_management, 管理控制台开启重推消息其他队列功能
+spring.cloud.stream.rabbit.bindings.dlqTopic-consumer.consumer.auto-bind-dlq=true
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {
+    /**
+     * 测试死信队列Topic
+     * @param messageBean
+     */
+    @StreamListener(DlqTopic.INPUT)
+    public void consumerDlqTopic(MessageBean messageBean) {
+        log.info("DLQ: Are you OK?");
+
+        // 由于初始值为1, 所以只会重试2次就成功了
+        if(count.incrementAndGet() % 3 == 0){
+            // 死信队列重推消息到该队列时, 由于count已经大于3, 则会消费成功
+            log.info("DLQ: Fine, thank you. And you?");
+        } else {
+            // 当重试次数用完还是有异常, 则会一次性抛出所有异常, 进入死信队列, 否则如果最终能消费成功, 则不会抛出异常
+            log.info("DLQ: What's your problem?");
+            throw new RuntimeException("DLQ: I'm not OK!");
+        }
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private DlqTopic dlqTopic;
+    
+    /**
+     * 测试Stream应用: 测试死信队列Topic
+     * @param body
+     */
+    @PostMapping("dlq")
+    public void dlq(@RequestParam(value = "body") String body){
+        MessageBean msg = new MessageBean();
+        msg.setPayload(body);
+        log.info("ready to send delayed message");
+
+        Message<MessageBean> message = MessageBuilder.withPayload(msg).build();
+        dlqTopic.output().send(message);
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+##### 异常降级
+
+###### 1、声明通道
+
+```java
+/**
+ * 测试Stream应用: 测试异常降级, 自定义异常逻辑 + 接口升版
+ */
+public interface FallbackTopic {
+
+    /**
+     * 消费者消费的Topic名称
+     */
+    String INPUT = "fallbackTopic-consumer";
+
+    /**
+     * 生产者生产的Topic名称
+     */
+    String OUTPUT = "fallbackTopic-producer";
+
+    /**
+     * Topic 消费者
+     * @return
+     */
+    @Input(INPUT)
+    SubscribableChannel input();
+
+    /**
+     * Topic 生产者
+     * @return
+     */
+    // 注意, 这里如果Input和Output如果value相同, 则启动会抛出bean definition with this name already exists异常,
+    // 所以, 需要配置不同的通道名称, 然后在配置文件配置他们的destination
+    @Output(OUTPUT)
+    MessageChannel output();
+}
+```
+
+###### 2、目的地绑定
+
+```properties
+# 测试异常降级, 自定义异常逻辑 + 接口升版: 绑定消费者、生产者信道到dlqTopic
+spring.cloud.stream.bindings.fallbackTopic-consumer.destination=fallback-Topic
+spring.cloud.stream.bindings.fallbackTopic-producer.destination=fallback-Topic
+spring.cloud.stream.bindings.fallbackTopic-consumer.consumer.max-attempts=2
+spring.cloud.stream.bindings.fallbackTopic-consumer.group=fallback-group
+# errors 是规定写死的
+# inputChannel => fallback-Topic.fallback-group.errors
+```
+
+###### 3、消费者开启监听
+
+```java
+/**
+ * Stream测试应用: 测试消费者
+ */
+@Slf4j
+// 绑定信道, 单存的配置项, 可以在配置类中配置
+@EnableBinding(value = {
+        Sink.class,
+        BroadcastTopic.class,
+        GroupTopic.class,
+        DelayedTopic.class,
+        ExceptionTopic.class,
+        RequeueTopic.class,
+        DlqTopic.class,
+        FallbackTopic.class
+})
+public class StreamConsumer {
+    /**
+     * 测试异常降级, 自定义异常逻辑 + 接口升版
+     * @param messageBean
+     */
+    @StreamListener(FallbackTopic.INPUT)
+    public void consumerFallbackTopic(MessageBean messageBean, @Header("version") String version) {
+        log.info("Fallback: Are you OK?");
+
+        // 接口升版: 可以根据不同的版本走不同的逻辑
+        if("1.0".equalsIgnoreCase(version)){
+            log.info("Fallback: Fine, thank you. And you?");
+        } else if("2.0".equalsIgnoreCase(version)){
+            // 当重试次数用完还是有异常, 则会一次性抛出所有异常, 进入具体异常降级逻辑, 否则如果最终能消费成功, 则不会抛出异常
+            log.info("Fallback: unsupported version?");
+            throw new RuntimeException("Fallback: I'm not OK!");
+        } else {
+            log.info("Fallback: version={}", version);
+        }
+    }
+
+    /**
+     * 具体异常降级逻辑
+     * @param message
+     */
+    // 当前方法用于处理MQTT消息, inputChannel参数指定了用于接收消息的channel
+    @ServiceActivator(inputChannel = "fallback-Topic.fallback-group.errors")
+    public void fallback(Message<?> message){
+        log.info("fallback entered, message={}", message);
+    }
+}
+```
+
+###### 4、生产者消息投递
+
+```java
+@RestController
+@Slf4j
+public class StreamSampleController {
+    
+    @Autowired
+    private FallbackTopic fallbackTopic;
+    
+    /**
+     * 测试Stream应用: 测试异常降级, 自定义异常逻辑 + 接口升版
+     * @param body
+     */
+    @PostMapping("fallback")
+    public void fallback(@RequestParam(value = "body") String body,
+                         @RequestParam(value = "version", defaultValue = "1.0") String version){
+        MessageBean msg = new MessageBean();
+        msg.setPayload(body);
+        log.info("ready to send delayed message");
+
+        // 设置接口版本: V1 => queue1, V2 => queue2
+        Message<MessageBean> message = MessageBuilder
+                .withPayload(msg)
+                .setHeader("version", version)
+                .build();
+        fallbackTopic.output().send(message);
+        log.info("发送完毕 {}" + message);
+    }
+}
+```
+
+#### 应用场景
+
+![1644400521818](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644400521818.png)
+
+在每次运营修改商品数据时，如果帧听到主属性发生变化，需要清空本地缓存和 Tair 缓存中，所有保存了该商品额度数据，可以用发布订阅模式来解决：每次主商品发生修改时， 会向 MetaQ 发布一条对应 Topic 的消息，此时可以对这个 Topic 配置一个广播和单播的监听器：
+
+- **广播组**：包括所有商品详情页的后台服务节点，商品修改的消息被每个服务节点消费，清空它们本地缓存中对应的商品信息。
+- **单播组**：单播消息只会被消费一次，用于删除 Tair 分布式缓存中对应的商品信息，因此，这里只配置了一个消费组，保证消息只会被组内的某一台机器所消费。
+
+### 2.5.  详细介绍 Sleuth？
+
+#### 概念
+
+![1644458483392](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644458483392.png)
+
+Sleuth，中文意思大侦探，是为了对微服务之间调用链进行跟踪的一个组件，在一个用户请求发起到结束的整个过程中，该 Request 经过的所有服务都会  Sleuth 梳理出来，从而很容易就可以追溯链路上下游所有的调用。
+
+#### 优点
+
+- **无业务侵入**：Sleuth 在设计上秉承低侵入的概念，无需对业务代码做任何改动，即可静默接入链路追踪功能。
+- **高性能**：一般认为在代码里加入完善的同步 log（10 行代码对应 2 条 log），会让接口降低 5% 左右的性能，而通过链路追踪在 log 里做埋点，多多少少也会影响一定性能的，所以 Sleuth 在埋点过程中力求性能影响降低到最小，同时还提供了**采样率配置**来进一步降低开销。
+
+#### 架构原理
+
+##### 集成 Log 系统
+
+- Sleuth 底层采用集成 Log 系统来实现业务埋点，链路信息会传递给底层 log 组件，同时 log 组件会在每行 log 头部输出这些数据。
+
+- log 业务埋点，就需要把链路追踪信息加入开发人员写的业务 log 中，而不是 Sleuth 生产出一行 log，所以，Sleuth 使用 `MDC` + `Format Pattern` 的方式输出信息。
+
+- 比如，当使用 `log.info` 打印日志时，Log 组件会将写入动作，封装成一个 LogEvent 事件，用于生成 Log 文件，而这个事件的具体表现形式由 `MDC` + `Format Pattern` 共同控制：
+
+  - `Format Pattern`：决定了 log 的输出样式，其中集成 Sleuth 后的 log 输出格式为：
+
+    ```properties
+    "%5p [sleuth-traceA,%X{X-B3-TraceId:-},%X{X-B3-SpanId:-},%X{X-Span-Export:-}]"
+    ```
+
+  - `MDC`：决定了 log 输出内容，其通过 InheritableThreadLocal 来实现，可以携带当前线程的上下文信息，Sleuth 借助了 AOP 机制，在方法调用时配置了切面，将链路追踪数据加入到了 `MDC` 中，这样在 log 打印时就能从 `MDC` 获取到这些值，然后填入 `Format Pattern` 中配置的占位符了。
+
+![1644459405453](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644459405453.png)
+
+##### Sleuth 数据结构
+
+- **Trace**：
+  - 由一系列 spans 组成的一个树状结构，包含一个请求从头贯穿到尾的调用链 ID，即 TraceID。
+  - 在一次请求中，不管调用链中途访问了多少服务节点，在每个节点 log 中打印的都是同一个 TraceID。
+-  **Span**：
+  - Sleuth 的一个基本工作单元，包含一个独一无二的单元 ID，即 SpanID，在服务 A 发起对服务 B 的调用，这个事件就可以看作是一个独立单元，生成一个独立的 SpanID。
+  - Span 还包含了时间戳，用于标识一个事件从开始到结束经过的时间，可用于统计接口的执行时间。
+  - Span 还包含了一些特殊的标记 Annotation，用于标识这个 Span 在执行过程中发起的一些特殊事件。
+- **Annotation**：
+  - 标记，用来及时记录一个事件的存在，一个 Span 可以包含多个 Annotation，每个 Annotation 表示一个**特殊事件**，同时含有一个时间戳字段，可以用来分析一个 Span 内每个事件的起始和结束时间。
+    - **Client Sent**：cs，客户端发起一个请求，描述了某个 span 的开始。
+    - **Server Received**：sr，服务端获得请求并准备开始处理它，sr - cs = 本次请求的网络延迟时间。
+    - **Server Sent**：ss，服务端请求处理完成，将要把 Response 返回给客户端，ss - sr = 本次请求服务端处理的时间。
+    - **Client Received**：cr，客户端成功接收到服务端的回复，表示一个 span 的结束，cr - cs = 客户端从服务端获取回复所需的时间。
+
+![1644460217838](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644460217838.png)
+
+##### 服务节点间的 ID 传递
+
+Sleuth 通过 Filter 向 Http Header 中添加链路追踪信息，使得下游系统可以识别出当前的 TraceID 以及前置的 SpanID 是什么。
+
+| 请求头名称        | 请求头内容     | 解释            |
+| ----------------- | -------------- | --------------- |
+| X-B3-TraceId      | Trace ID       | 链路全局唯一 ID |
+| X-B3-SpanId       | Span ID        | 当前 Span ID    |
+| X-B3-ParentSpanId | Parent Span ID | 前置 Span ID    |
+| X-Span-Export     | boolean        | 是否可以被采样  |
+
+#### 使用方式
+
+##### POM 依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-sleuth</artifactId>
+</dependency>
+
+<!-- Logstash for ELK，非Sleuth！ -->
+<dependency>
+    <groupId>net.logstash.logback</groupId>
+    <artifactId>logstash-logback-encoder</artifactId>
+    <version>5.2</version>
+</dependency>
+```
+
+##### 采样率配置
+
+```properties
+# Sleuth采样率配置 => eg: 1为100%收集, 但如果没有Zipkin收集的话, 显示还是为false
+spring.sleuth.sampler.probability=1
+```
+
+##### 控制台日志格式配置
+
+```xml
+<!-- 日志格式： 关键是 -%5p 
+	 对应的输出内容：10:53:47.520  INFO [-,,,] 14264 --- [           main] msg...
+-->
+<property name="CONSOLE_LOG_PATTERN"
+          value="%clr(%d{HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}}" />
+```
+
+##### LogStash 日志格式配置
+
+```xml
+<!-- Logstash -->
+<!-- 为logstash输出的JSON格式的Appender -->
+<appender name="logstash"
+          class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+    <destination>192.168.1.150:5044</destination>
+    <!-- 日志输出编码 -->
+    <encoder
+             class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+        <providers>
+            <timestamp>
+                <timeZone>UTC</timeZone>
+            </timestamp>
+            <pattern>
+                <pattern>
+                    {
+                    "severity": "%level",
+                    "service": "${springAppName:-}",
+                    "trace": "%X{X-B3-TraceId:-}",
+                    "span": "%X{X-B3-SpanId:-}",
+                    "exportable": "%X{X-Span-Export:-}",
+                    "pid": "${PID:-}",
+                    "thread": "%thread",
+                    "class": "%logger{40}",
+                    "rest": "%message"
+                    }
+                </pattern>
+            </pattern>
+        </providers>
+    </encoder>
+</appender>
+```
+
+#### 应用场景
+
+借助 Sleuth 的链路追踪能力，还可以完成一些其他的任务：
+
+- **线上故障定位**：结合 TracingID + ELK 可以寻找出上下游链路中所有的日志信息，来协助定位故障。
+- **依赖分析梳理**：梳理上下游依赖关系，理清整个系统中所有微服务之间的依赖关系。
+- **链路优化**：通过对链路调用情况的统计分析，识别出转化率最高的业务场景，从而为以后的产品设计提供指导意见。
+- **性能分析**：梳理各个环节的时间消耗，找出性能瓶颈，为性能优化、软硬件资源调配指明方向。
+
+### 2.6. 详细介绍 Gateway？
+
+#### 网关层概念
+
+##### 背景
+
+1. **路由维护成本高**：微服务下，部署包非常多，提供给外部用户访问的 url+端口也各不相同，如果由前端负责配置，则会拖慢项目进度，且页面在一大堆 url 跳来跳去，用户体验可能也不好，如果由运维团队负责配置，则增加、删除服务节点，导致的 IP 变化时又要重新配置，十分麻烦。
+2. **安全性问题**：不同服务的访问控制可能会不一样，如果让每个服务都实现同样的访问验证逻辑，未免有些太繁琐，且如果有一天需要更改权限认证方案，所有服务都得跟着改，也是麻烦。
+
+##### 架构
+
+引入网关层后，微服务架构变更为以下样子，网关层作为唯一的对外服务，外部请求不直接访问服务层，而是由网关层承接所有的 Http 请求，且可与 Nginx 一同使用。
+
+![1644463270083](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644463270083.png)
+
+##### 作用
+
+- **路由规则**：解决**微服务路由维护成本高**的问题，包含 2 个方面：
+  1. **服务寻址**：依赖微服务的服务发现机制和负载均衡机制，实现服务寻址和负载均衡。
+  2. **URL 映射**：客户端访问的 URL 不再是真实的路径，是需要经过网关层的路径规则，把来访的 URL 映射成真正的服务路径，再去请求对应的服务。
+- **访问控制**：访问控制的具体实现并不是由网关层提供，但网关层却是作为一个载体，承载 2 个相关方面的任务：
+  - **拦截请求**：网关层可以检查访问请求中，是否携带令牌等身份信息，如果没有说明还没有登录，则直接返回 403 即可。
+  - **鉴权**：对于携带有令牌的请求，网关层还可以调用其他服务，来验证令牌的真假，对令牌校验失败或者已过期的请求，拒绝执行服务请求。
+
+#### Gateway 概念
+
+- Gateway，是 Spring Cloud 中的第二代网关，⽬标是取代 Zuul，在各项指标上都领先 Zuul。
+- Gateway，基于 Spring 5.0 + SpringBoot 2.0 + WebFlux + Netty 等技术开发，提供**统⼀的路由**⽅式，并且**基于 Filter 链**的⽅式提供了⽹关基本的功能，比如：鉴权、流量控制、熔断、路径重写、⽇志监控等。
+
+#### 架构原理
+
+##### 集成 Netty
+
+![1644474442817](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644474442817.png)
+
+Netty，是一个非阻塞、高性能、高可靠的异步输入输出框架，在网络领域是黄金 AK 般的存在，性能非常高，其在 Gateway 中主要应用在以下几个地方：
+
+1. **发起服务调用**：由 NettyRoutingFilter 实现，底层基于 Netty#Http Client 来发起外部服务调用。
+2. **Response 调用**：由 NettyResponseFilter 实现，外部服务调用结束后，把 Response 回传给 Gateway 调用者。
+3. **Socket 连接**：Gateway 的 Socket 连接具体由 ReactorNettyWebSocketClient 类承接，其底层也是基于 Netty#Http Client 发起连接请求。
+
+=> 客户端发起请求到 Gateway，由 NettyRoutingFilter 底层的 Netty#HttpClient 向服务发起调用，调用结束后的 Response 再由 NettyResponseFilter 回传给客户端，可见，Netty 贯穿了从 Request 发起到 Response 结束的整个过程，承担了所有和网络调用相关的任务，也因为有了 Netty 的加持，Gateway 相对于 Zuul 1.x#Servlet 网络请求效率大幅提升。
+
+```java
+@Configuration
+@ConditionalOnProperty(name = "spring.cloud.gateway.enabled", matchIfMissing = true)
+@EnableConfigurationProperties
+@AutoConfigureBefore({ HttpHandlerAutoConfiguration.class,
+		WebFluxAutoConfiguration.class })
+@AutoConfigureAfter({ GatewayLoadBalancerClientAutoConfiguration.class,
+		GatewayClassPathWarningAutoConfiguration.class })
+@ConditionalOnClass(DispatcherHandler.class)
+public class GatewayAutoConfiguration {
+	@Configuration
+    // reactor.netty.http.client.HttpClient
+	@ConditionalOnClass(HttpClient.class)
+    protected static class NettyConfiguration {
+        @Bean
+		@ConditionalOnMissingBean
+        public HttpClient httpClient(HttpClientProperties properties) {
+            ...
+        }
+        
+		@Bean
+		public HttpClientProperties httpClientProperties() {
+			return new HttpClientProperties();
+		}
+
+		@Bean
+		public NettyRoutingFilter routingFilter(HttpClient httpClient,
+				ObjectProvider<List<HttpHeadersFilter>> headersFilters,
+				HttpClientProperties properties) {
+			return new NettyRoutingFilter(httpClient, headersFilters, properties);
+		}
+
+		@Bean
+		public NettyWriteResponseFilter nettyWriteResponseFilter(
+				GatewayProperties properties) {
+			return new NettyWriteResponseFilter(properties.getStreamingMediaTypes());
+		}
+
+		@Bean
+		public ReactorNettyWebSocketClient reactorNettyWebSocketClient(
+				HttpClient httpClient) {
+			return new ReactorNettyWebSocketClient(httpClient);
+		}
+    }
+}
+```
+
+##### Gateway 自动装配
+
+![1644475101295](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644475101295.png)
+
+- **GatewayAutoConfiguration**：核心自动装配主类，负责初始化所有的 Route 路由规则、Predicate 断言工厂和 Filter 过滤器（包括 Global Filter 和 Route Filter），以及加载 Netty 相关配置，用于完成基本的路由功能。
+- **GatewayLoadBalancerClientAutoConfiguration**：在 GatewayAutoConfiguration 自动装配完成后，负责加载 Ribbon 和一系列负载均衡配置。
+- **GatewayClassPathWarningAutoConfiguration**：在 GatewayAutoConfiguration 自动装配完成后，负责检查项目中的 Spring WebFlux 是否加载了正确的配置。
+
+```java
+@Configuration
+@ConditionalOnProperty(name = "spring.cloud.gateway.enabled", matchIfMissing = true)
+@EnableConfigurationProperties
+@AutoConfigureBefore({ HttpHandlerAutoConfiguration.class,
+		WebFluxAutoConfiguration.class })
+@AutoConfigureAfter({ GatewayLoadBalancerClientAutoConfiguration.class,
+		GatewayClassPathWarningAutoConfiguration.class })
+@ConditionalOnClass(DispatcherHandler.class)
+public class GatewayAutoConfiguration {
+    ...// 初始化路由规则、断言工厂、过滤器等Bean
+}
+```
+
+- **GatewayRedisAutoConfiguration**：负责限流功能的自动装配。
+- **GatewayMetricsAutoConfiguration**：负责做一些统计的工作，比如运行时长和调用次数的统计。
+- **GatewayDiscoveryClientAutoConfiguration**：负责服务发现功能的自动装配。
+
+```properties
+# Auto Configure
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+org.springframework.cloud.gateway.config.GatewayClassPathWarningAutoConfiguration,\
+org.springframework.cloud.gateway.config.GatewayAutoConfiguration,\
+org.springframework.cloud.gateway.config.GatewayLoadBalancerClientAutoConfiguration,\
+org.springframework.cloud.gateway.config.GatewayNoLoadBalancerClientAutoConfiguration,\
+org.springframework.cloud.gateway.config.GatewayMetricsAutoConfiguration,\
+org.springframework.cloud.gateway.config.GatewayRedisAutoConfiguration,\
+org.springframework.cloud.gateway.discovery.GatewayDiscoveryClientAutoConfiguration
+org.springframework.boot.env.EnvironmentPostProcessor=\
+org.springframework.cloud.gateway.config.GatewayEnvironmentPostProcessor
+```
+
+##### Route 数据结构
+
+![1644475772551](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644475772551.png)
+
+Route，路由，是**最基础的工作单元**，Gateway 中可以定义很多个 Route，一个 Route 就是一套包含完整转发规则的路由，主要由三部分组成：
+
+- **断言集合**：Predicates，是路由处理的第一个环节，是路由的匹配规则，决定了一个网络请求是否可以匹配给当前 Route 来处理，当 Route 断言集合中的每个 Predicate 都匹配成功以后，才算匹配 Route，才能走到 Filter 环节。
+- **过滤器集合**：Filters，如果请求通过了前面的 Predicate，那么就表示该请求正式被当前 Route 路由接手了，接下来就需要经过一系列的过滤器集合，在请求前或者后执⾏业务逻辑。
+- **UR**I：如果请求顺利通过了过滤器的处理，那么接下来就是转发请求了，URI 是统一资源标识符，可以是一个具体的网址，也可以是 IP+端口，也可以是在 Eureka 中注册的服务名称。
+
+```java
+public class Route implements Ordered {
+
+	private final String id;
+
+	private final URI uri;
+
+	private final int order;
+
+	private final AsyncPredicate<ServerWebExchange> predicate;
+
+	private final List<GatewayFilter> gatewayFilters;
+   	...
+    public static class Builder extends AbstractBuilder<Builder> {
+
+		protected Predicate<ServerWebExchange> predicate;
+        ...
+    }
+}
+```
+
+##### Route 工作流程
+
+![1644476775581](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1644476775581.png)
+
+- **RoutePredicateHandlerMapping**：获取所有已配置的路由集，然后依次循环每个 Route，把本次请求与 Route 中配置的所有断言进行匹配，选定该**第一个**所有的断言**都通过**的 Route 来接手后面的工作。
+- **FilteringWebHandler**：在前一步选中 Route 后，由 FilteringWebHandler 把请求交给过滤器，不仅当前 Route 的过滤器会生效，在项目中添加的全局过滤器 Global Filter 也会生效，在请求前或者后执⾏业务逻辑：
+  - **请求前 `pre` 类型过滤器**：参数校验、权限校验（鉴权）、流量监控、⽇志输出、协议转换等。
+  - **请求后 `post` 类型过滤器**：响应内容、响应头修改、⽇志输出、流量监控等。
+- **寻址**：如果请求顺利通过了过滤器的处理，那么接下来就是转发请求了，URI 可以是一个具体的网址，也可以是 IP+端口，也可以是在 Eureka 中注册的服务名称：
+  - **负载均衡**：Gateway 转发过程可以采用 Eurea 注册的服务名称方式来调用，底层借助 Ribbon 来实现负载均衡，配置方式为 `lb://服务名称/`。
+
+```java
+@Configuration
+@ConditionalOnProperty(name = "spring.cloud.gateway.enabled", matchIfMissing = true)
+@EnableConfigurationProperties
+@AutoConfigureBefore({ HttpHandlerAutoConfiguration.class,
+		WebFluxAutoConfiguration.class })
+@AutoConfigureAfter({ GatewayLoadBalancerClientAutoConfiguration.class,
+		GatewayClassPathWarningAutoConfiguration.class })
+@ConditionalOnClass(DispatcherHandler.class)
+public class GatewayAutoConfiguration {
+    ...
+	@Bean
+	public RoutePredicateHandlerMapping routePredicateHandlerMapping(
+			FilteringWebHandler webHandler, RouteLocator routeLocator,
+			GlobalCorsProperties globalCorsProperties, Environment environment) {
+		return new RoutePredicateHandlerMapping(webHandler, routeLocator,
+				globalCorsProperties, environment);
+	}
+    ...
+}
+```
+
+##### 断言 Predicate
+
+Gateway 提供了十多种内置的断言，常用的有：
+
+| 内置断言种类 | 用法                                                         | 作用                                                         |
+| ------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 路径断言     | .route(r -> r.path("/gateway/**").uri(...))                  | 当请求的URL与断言中的 "/gateway/**"规则匹配，才继续下发（下发到过滤、url 转发中） |
+| 方法断言     | .route(r -> r.path("/gateway/**").and().method(HttpMethod.GET).uri(...)) | 当请求的 Http Method 与断言中的匹配时，才继续下发            |
+| 请求参数断言 | .route(r -> r.path("/gateway/**").and().and().query("name", "test").and().query("age").uri(...)) | 分为属性名验证（名称相同即算匹配）和属性值验证（名称+值都相同才算匹配），才继续下发 |
+| 请求头断言   | .route(r -> r.path("/gateway/**").and().header("Authorization").uri(...)) | 分为属性名验证（名称相同即算匹配）和属性值验证（名称+值都相同才算匹配），才继续下发 |
+| Cookie断言   | .route(r -> r.path("/gateway/**").and().cookie("name", "test").uri(...)) | 只有当名称+值都相同才算匹配，才继续下发                      |
+| 时间片断言   | .route(r -> r.path("/gateway/**")<br/>.and().before(ZonedDateTime.now().plusMinutes(1)).uri(...)) | 分为 Before、Between 和 After 三种，分别指定了是在是什么时间之前、之间、之后才算匹配，才继续下发 |
+
+##### 过滤器 Filter
+
+Gateway 中的过滤器，会经过优先级排列，所有网关调用请求从最高优先级的过滤器开始，一路走到被最后一个过滤器处理才返回。
+
+###### 按执行阶段分
+
+1）**请求前 `pre` 类型过滤器**：order=0，代表优先级最低，越晚被执行，order=MAX，代表优先级最高，越早被执行。
+
+```java
+@Override
+public GatewayFilter apply(NameValueConfig config) {
+	return (exchange, chain) -> {
+        // 在Response中添加Header信息
+        exchange.getResponse().getHeaders().add(config.getName(), config.getValue());
+        return chain.filter(exchange);
+    };
+}
+```
+
+2）**请求后 `post` 类型过滤器**：与 pre 相反，order=0，代表优先级最高，越早被执行，order=MAX，代表优先级最低，越晚被执行。
+
+```java
+return chain.filter(exchange)
+    	// then是回调函数，在下级调用链路都完成以后才被执行
+    	.then(Mono.fromRunnable(() -> {
+		// 业务逻辑...
+		}));
+```
+
+###### 按功能类型分
+
+1）**请求头过滤器**：
+
+```java
+// 为Response增加who请求头
+.filters(f -> f.addResponseHeader("who", "gateway-header"))
+```
+
+2）**前缀截断过滤器**：
+
+```java
+.route(r -> r.path("/gateway-test/**")
+       		// 截取去掉/gateway-test前缀
+             .filters(f -> f.stripPrefix(1))
+             .uri("lb://FEIGN-SERVICE-PROVIDER/")
+)
+```
+
+3）**前缀加入过滤器**：
+
+```java
+.route(r -> r.path("/gateway-test/**")
+       		// 在/gateway-test前面加入/go/前缀
+             .filters(f -> f.prefixPath("go"))
+             .uri("lb://FEIGN-SERVICE-PROVIDER/")
+)
+```
+
+4）**重定向过滤器**：
+
+```java
+.filters(f -> f.redirect(302, "https://www.imooc.com/"))
+```
+
+5）**会话过滤器**：
+
+```java
+// 基于Spring-Session或者Spring-Security时，在调用服务前强制保存Session
+.filters(f -> f.saveSession())
+```
+
+#### 使用方式
+
+##### POM 依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-gateway</artifactId>
+</dependency>
+```
+
+##### 配置文件配置 Route
+
+```yaml
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      discovery:
+        # 开启时, 会自动配置默认路由规则
+        locator:
+          enabled: true
+          # 使用小写的服务ID(默认为大写): 配置后Gateway对大写的服务ID将不生效, 自定义的路由规则可以实现既大写又小写
+          lower-case-service-id: true
+      # 配置自定义路由规则
+      routes:
+      # 设置路由ID列表(不允许重复?)
+      - id: feignclient
+        predicates:
+        # 设置路径断言列表: 匹配yml的所有请求都会被转发到下面的uri(可以配置多个路由断言共同作用)
+        - Path=/yml/**
+        filters:
+        # 设置路由过滤器: 截去路径断言中的path, 拼接uri进行转发(可以配置多个过滤器共同作用)
+        - StripPrefix=1
+        # 设置转发路径/服务
+        uri: lb://FEIGN-CLIENT
+```
+
+##### Configuration 配置 Route
+
+```java
+/**
+ * Gateway配置测试类: 测试自定义路由规则
+ */
+@Configuration
+// @ConditionalOnBean没用, 注入的AuthFilter还是为null => 解决方式: GatewayConfiguration必须与自定义的Filter在同级目录注入时才不会为null
+//@ConditionalOnBean({TimerFilter.class, AuthFilter.class})
+public class GatewayConfiguration {
+
+    // 利用Gateway实现Zuul After Filter
+    @Autowired
+    private TimerFilter timerFilter;
+
+    /**
+     * 测试网关JWT鉴权过滤器
+     */
+    @Autowired
+    private AuthFilter authFilter;
+
+    @Bean
+    @Order
+    public RouteLocator customizedRoutes(RouteLocatorBuilder routeLocatorBuilder){
+        return routeLocatorBuilder.routes()
+                // 第一个路由规则
+                .route(r ->
+                        // 配置路径断言
+                        r.path("/java/**")
+                        // 配置请求方法断言
+                        .and().method(HttpMethod.POST)
+                        // 配置header断言
+                        .and().header("name")
+                        // 配置过滤器
+                        .filters(f ->
+                                // 配置截去再拼接过滤器
+                                f.stripPrefix(1)
+                                // 配置响应header过滤器
+                                .addResponseHeader("java-param", "gateway-config")
+                                // 利用Gateway实现Zuul After Filter
+                                .filter(timerFilter)
+                                // 测试网关JWT鉴权
+                                .filter(authFilter)
+                        )
+                        // 配置转发uri
+                        .uri("lb://FEIGN-CLIENT")
+                )
+                // 第二个路由规则
+                .route(r ->
+                        // 配置路径断言
+                        r.path("/seckill/**")
+                                // 配置After断言: 服务器启动后的2分钟生效
+                                .and().after(ZonedDateTime.now().plusMinutes(2))
+                                // 配置过滤器
+                                .filters(f ->
+                                        // 配置截去再拼接过滤器
+                                        f.stripPrefix(1)
+                                )
+                                // 配置转发uri
+                                .uri("lb://FEIGN-CLIENT")
+                )
+                .build();
+    }
+}
+```
+
+##### 自定义 Gateway Filter
+
+```java
+/**
+ * 测试网关JWT鉴权: 网关鉴权核心逻辑
+ */
+@Component
+@Slf4j
+// 全局Global过滤器 GlobalFilter
+public class AuthFilter implements GatewayFilter, Ordered {
+    /**
+     * 执行过滤逻辑
+     * @param exchange
+     * @param chain
+     * @return
+     */
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        ...
+    }
+    
+    /**
+     * 高优先级: 小, 低优先级: 大 => 后置过滤器则反过来(钩子)
+     * @return
+     */
+    @Override
+    public int getOrder() {
+        return 0;
+    }
+}
+```
+
+##### 自定义 Global Filter
+
+```java
+/**
+ * 利用Gateway实现Zuul After Filter
+ */
+@Component
+@Slf4j
+// 全局Global过滤器 GlobalFilter
+public class TimerFilter implements GlobalFilter, Ordered {
+    /**
+     * 执行过滤逻辑
+     * @param exchange
+     * @param chain
+     * @return
+     */
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        ...
+    }
+    
+    /**
+     * 高优先级: 小, 低优先级: 大 => 后置过滤器则反过来(钩子)
+     * @return
+     */
+    @Override
+    public int getOrder() {
+        return 0;
+    }
+}
+```
+
