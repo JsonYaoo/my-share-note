@@ -298,22 +298,21 @@ public final class ServiceLoader<S>implements Iterable<S> {
 
 ![1626090586657](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1626090586657.png)
 
-- **类加载流程**：WebappClassLoaderBase#loadClass(String, boolean)流程：
+- **类加载流程**：`WebappClassLoaderBase#loadClass(String, boolean)` 流程：
 
-1. 先查找Tomcat缓存，如果找得到，则返回Tomcat缓存中的Class对象。
-2. 如果Tomcat缓存中找不到，则查找JVM缓存，如果找得到，则返回JVM缓存中的Class对象。
-3. 如果JVM缓存中也找不到，则用扩展类加载器来加载（**重点！这里并没有首先使用系统类加载器，而是直接使用了扩展类加载器来加载，也就是打破了系统类加载器的双亲委派机制**），根据双亲委派机制，扩展类加载器会委派启动类加载器来加载Class，从而保证了JRE核心类库不会被重复加载。
-4. 如果指定了delegateLoad（需要先委托父类加载），则**先调用父类加载器加载**（share -> common -> app -> ext -> bootstrap，这里是为了保持顺序加载机制），如果找不到**才调用本地的findClass（String）**搜索本地存储库（WEB-INF/classes -> WEB-INF/lib），找到则返回，找不到则抛出ClassNotFoundException异常。
-5. 如果没有指定delegateLoad（需要先委托父类加载），则**先调用调用本地的findClass（String）**搜索本地存储库（WEB-INF/classes -> WEB-INF/lib），如果找不到**才调用父类加载器加载**（share -> common -> app -> ext -> bootstrap，这里是为了保底机制），找到则返回，找不到则抛出ClassNotFoundException异常。
+1. 先查找 Tomcat 缓存，如果找得到，则返回 Tomcat 缓存中的 Class 对象。
+2. 如果 Tomcat 缓存中找不到，则查找 JVM 缓存，如果找得到，则返回 JVM 缓存中的 Class 对象。
+3. 如果 JVM 缓存中也找不到，则会尝试走 Tomcat#系统类加载器，加载 Tomcat#Classpath 目录下的 jar 包，以及走正常的 `app 系统类 -> ext 扩展类 -> bootstrap 启动类` 双亲委派机制，保证 JRE 核心类库、以及 tomcat 私有类库不会被重复加载。
+4. 如果走正常双亲委派机制加载不到，且指定了 `delegateLoad`，即需要先委托父类加载，则先调用父类加载器加载 `share web共享 -> common 全部共享-> app 系统类 -> ext 扩展类 -> bootstrap 启动类`，如果找不到，才调用本地的 `findClass(String)`，搜索 webapp 本地类库 `WEB-INF/classes` 、以及 `WEB-INF/lib`，找到则返回，找不到则抛出 ClassNotFoundException 异常。
+5. 如果走正常双亲委派机制加载不到，也没有指定 `delegateLoad`，即不需要先委托父类加载），则调用本地的 `findClass(String)`，搜索 webapp 本地类库 `WEB-INF/classes` 、以及 `WEB-INF/lib`，如果找不到，才调用父类加载器加载 `share web共享 -> common 全部共享-> app 系统类 -> ext 扩展类 -> bootstrap 启动类`，找到则返回，找不到则抛出 ClassNotFoundException 异常。
 
 ![1626090700749](D:\MyData\yaocs2\AppData\Roaming\Typora\typora-user-images\1626090700749.png)
 
-- **总结**：可以看到，Tomcat#WebappClassLoaderBase的类加载机制是**打破了双亲委派模型**的：
-  - **ext -> bootstarp模型**：保证了JRE核心类库不会被重复加载，满足了背景b加载JVM共同类库的需求。
-  - **ext -> webapp模型**：实现了每个web应用只加载自己的类库（WEB-INF/classes -> WEB-INF/lib），从而实现了应用间的类库隔离，满足了背景a的需求。
-  - **webapp -> share -> common模型**：实现了所有web应用之间、web与Tomcat之间，能够加载相同的类库，避免指定的类库不会被重复加载，满足了背景b加载其他共同类库的需求。
-  - **（不确定）catalina -> 父类加载器模型**：实现了只加载Tomcat容器自身的类库，对于webapp是看不到的（可在config/catalina.properties的server.loader中配置jar和class的路径），满足了背景c的需求。
-  - **（不确定）Jsp -> webapp -> 父类加载器模型**：通过在jsp修改后卸载再生成新的Jsp类加载器，重新加载新生成的Jsp class，从而实现Jsp的HostSwap（热替换），满足了背景d的需求。
+- **总结**：可以看到，Tomcat#WebappClassLoaderBase的类加载机制，是打破了双亲委派模型的：
+  - 1）先尝试 app -> ext -> bootstarp 模型：保证了 JRE 核心类库不会被重复加载，满足了背景 b 加载 JVM 共同类库的需求，以及背景 c 加载 tomcat 私有类库的需求。
+  - 2） `delegateLoad` = false 时，ext -> webapp 模型：实现了每个 web 应用只加载自己的类库 `WEB-INF/classes` 、以及 `WEB-INF/lib`，从而实现了应用间的类库隔离，满足了背景 a 的需求。
+  - 3）webapp -> share -> common 模型：实现了所有 web 应用之间、web 与 Tomcat 之间，能够加载相同的类库，避免指定的类库不会被重复加载，满足了背景 b 加载其他共同类库的需求。
+  - 4）Jsp -> webapp：通过在 jsp 修改后，卸载再生成新的 Jsp 类加载器，重新加载新生成的 Jsp class，从而实现 Jsp HostSwap 热替换功能，满足了背景 d 的需求。
 
 ### 1.6. JVM运行时数据区？
 
