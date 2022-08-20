@@ -934,6 +934,92 @@ public class Solution {
 }
 ```
 
+#### 143. 重排链表 | medium
+
+##### 1）寻找链表中点 + 反转链表 + 合并链表 | O（3 * n）
+
+- **思路**：见代码注释。
+- **结论**：时间，1 ms，99.87%，空间，44 mb，67.67%，时间上，寻找链表中点花费 O（n），反转链表花费 O（n），合并链表花费 O（n），所以整体时间复杂度为 O（3 * n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+/**
+ * Definition for singly-linked list.
+ * public class ListNode {
+ *     int val;
+ *     ListNode next;
+ *     ListNode() {}
+ *     ListNode(int val) { this.val = val; }
+ *     ListNode(int val, ListNode next) { this.val = val; this.next = next; }
+ * }
+ */
+class Solution {
+    public void reorderList(ListNode head) {
+        // 找到链表中点: mid必有值
+        ListNode mid = findMidListNode(head);
+
+        // 清空mid之后的指针, 脱钩链表mid之后的链表
+        ListNode next = mid.next;
+        mid.next = null;
+
+        // 反转中点后的链表：reversedHead可能为null, 说明只有一个节点, 此时直接返回即可
+        ListNode reversedHead = reverseList(next);
+        if(reversedHead == null) {
+            return;
+        }
+
+        // 合并链表, 反转后的链表隔一个位置插入到原链表
+        mergeList(head, reversedHead);
+    }
+
+    // 合并链表, hi隔一个位置插入lo
+    private void mergeList(ListNode lo, ListNode hi) {
+        ListNode loNext, hiNext;
+        while(lo != null && hi != null) {
+            // 备份next指针
+            loNext = lo.next;
+            hiNext = hi.next;
+
+            // 链接lo、hi
+            lo.next = hi;
+            hi.next = loNext;
+
+            // 继续移动
+            lo = loNext;
+            hi = hiNext;
+        }
+    }
+
+    // 反转链表
+    private ListNode reverseList(ListNode head) {
+        if(head == null) {
+            return null;
+        }
+
+        ListNode pre = null, next;
+        while(head != null) {
+            // 反转
+            next = head.next;
+            head.next = pre;
+
+            // 继续遍历
+            pre = head;
+            head = next;
+        }
+        return pre;
+    }
+
+    // 找到链表中点
+    private ListNode findMidListNode(ListNode head) {
+        ListNode slow = head, fast = head.next;
+        while(fast != null && fast.next != null) {
+            fast = fast.next.next;
+            slow = slow.next;
+        }
+        return slow;
+    }
+}
+```
+
 #### 146. LRU 缓存 | medium
 
 ##### 1）暴力解法 | O（1）
@@ -2618,6 +2704,94 @@ class Solution {
 }
 ```
 
+#### 98. 验证二叉搜索树 | 树形 dp | medium
+
+##### 1）树形 dp 递归 | O（n）
+
+- **思路**：
+  1. 通过根节点不断向下收集左孩子和右孩子的信息，来实现树形 dp。
+  2. 由于需要左右孩子的信息来判断是否为二叉搜索树，所以结合概念得知，需要直到左、右孩子是否为二叉搜索树，以及最大值和最小值，因此需要建立一个特定数据结构 BstRes。
+  3. 如果收集到左右孩子的信息后，则还要进行判断，生成当前根节点的信息，包括是否为二叉搜索树、最大值和最小值。
+     1. 如果没有左右孩子，说明当前为叶子节点，那么返回是二叉搜索树，最大值为 val，最小值为 val。
+     2. 如果同时有左右孩子，且左、右孩子都为二叉搜索树、 val 大于左孩子的最大值、val 小于右孩子的最小值，那么返回是二叉搜索树，最小值为左孩子最小，最大值为右孩子最大，否则返回 false。
+     3. 如果只有左孩子，且左孩子为二叉搜索树、 val 大于左孩子的最大值，那么返回是二叉搜索树，最小值为左孩子最小，最大值为 val，否则返回 false。
+     4. 如果只有右孩子，且右孩子为二叉搜索树、 val 小于右孩子的最小值，那么返回是二叉搜索树，最小值为 val，最大值为右孩子最大，否则返回 false。
+- **结论**：时间，0ms，100%，38.1mb，51.71%，效率非常好，就这吧~
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+
+    class BstRes {
+        TreeNode node;
+        boolean isBST;
+        int min;
+        int max;
+        
+        BstRes(TreeNode node, boolean isBST, int min, int max) {
+            this.node = node;
+            this.isBST = isBST;
+            this.min = min;
+            this.max = max;
+        }
+    }
+
+    public boolean isValidBST(TreeNode root) {
+        BstRes bstRes = f(root);
+        return bstRes.isBST;
+    }
+
+    private BstRes f(TreeNode root) {
+        if(root == null) {
+            return new BstRes(root, true, root.val, root.val);
+        }
+        if(root.left == null && root.right == null) {
+            return new BstRes(root, true, root.val, root.val);
+        } 
+        // 左孩子不为空, 右孩子不为空
+        else if(root.left != null && root.right != null) {
+            BstRes leftRes = f(root.left);
+            BstRes rightRes = f(root.right);
+
+            if(leftRes.isBST && rightRes.isBST
+                & leftRes.max < root.val && root.val < rightRes.min) {
+                return new BstRes(root, true, leftRes.min, rightRes.max);
+            }
+        } 
+        // 左孩子不为空, 右孩子为空
+        else if(root.left != null){
+            BstRes leftRes = f(root.left);
+            if(leftRes.max < root.val && leftRes.isBST) {
+                return new BstRes(root, true, leftRes.min, root.val);
+            }
+        } 
+        // 右孩子不为空, 左孩子为空
+        else {
+            BstRes rightRes = f(root.right);
+            if(root.val < rightRes.min && rightRes.isBST) {
+                return new BstRes(root, true, root.val, rightRes.max);
+            }
+        }
+
+        return new BstRes(root, false, Integer.MAX_VALUE, Integer.MIN_VALUE);
+    }
+}
+```
+
 #### 99. 恢复二叉搜索树 | medium
 
 ##### 1）模拟 + 递归式中序遍历 + 值交换 | O（3 * n）
@@ -3782,6 +3956,300 @@ class Solution {
 }
 ```
 
+#### 110. 平衡二叉树 | 树形 dp | easy
+
+##### 1）树形 dp | O（n）
+
+- **思路**：树形 dp，不断向左、向右子树获取信息，然后聚合判断是否平衡，最后把结果向上汇报，周而复始。
+- **结论**：时间，1 ms，44.70%，空间，41 mb，68.21%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Info {
+    int height;
+    boolean isBalanced;
+    
+    Info(int height, boolean isBalanced) {
+        this.height = height;
+        this.isBalanced = isBalanced;
+    }
+}
+class Solution {
+    public boolean isBalanced(TreeNode root) {
+        if(root == null) {
+            return true;
+        }
+
+        return f(root).isBalanced;
+    }
+
+    private Info f(TreeNode root) {
+        if(root == null) {
+            return new Info(0, true);
+        }
+
+        Info li = f(root.left);
+        Info ri = f(root.right);
+
+        // 左平衡、右平衡、整体平衡
+        if(li.isBalanced && ri.isBalanced && Math.abs(li.height - ri.height) <= 1) {
+            return new Info(Math.max(li.height, ri.height) + 1, true);
+        } 
+        // 非平衡二叉树
+        else {
+            return new Info(Math.max(li.height, ri.height) + 1, false);
+        }
+    }
+}
+```
+
+##### 2）树形 dp 优化 | O（n）
+
+- **思路**：在 1 的基础上，递归函数不再返回 Info 数据结构，而只返回 root 二叉树的高度，以及同时利用这个值等于 -1，来表示 root 二叉树非平衡，以减少内存开销。
+- **结论**：时间，0 ms，100.00%，空间，41.3 mb，27.58%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    public boolean isBalanced(TreeNode root) {
+        if(root == null) {
+            return true;
+        }
+        return isBalanced(f(root));
+    }
+
+    // 根据高度, 判断二叉树是否平衡
+    private boolean isBalanced(int height) {
+        return height != -1;
+    }
+
+    private int f(TreeNode root) {
+        if(root == null) {
+            return 0;
+        }
+
+        int lh = f(root.left);
+        int rh = f(root.right);
+
+        // 左平衡、右平衡、整体平衡
+        if(isBalanced(lh) && isBalanced(rh) && Math.abs(lh - rh) <= 1) {
+            return Math.max(lh, rh) + 1;
+        } 
+        // 非平衡二叉树
+        else {
+            return -1;
+        }
+    }
+}
+```
+
+#### 111. 二叉树的最小深度 | easy
+
+##### 1）树形 dp | O（n）
+
+- **思路**：树形 dp，不断判断是向左、向右子树获取信息，然后把结果向上汇报，只有碰到叶子节点，才决定最小的深度为 1，其他的则在这基础上累加 1，周而复始。
+- **结论**：时间，8 ms，31.57%，空间，61.1 mb，46.45%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    public int minDepth(TreeNode root) {
+        return f(root);
+    }
+
+    private int f(TreeNode root) {
+        if(root == null) {
+            return 0;
+        }
+        // 到达叶子节点
+        if(root.left == null && root.right == null) {
+            return 1;
+        }
+
+        // 如果不存在左孩子, 那么就看右孩子
+        if(root.left == null) {
+            return f(root.right) + 1;
+        } 
+        // 如果不存在右孩子, 那么就看左孩子
+        else if(root.right == null) {
+            return f(root.left) + 1;
+        }
+        // 如果左、右孩子同时存在, 那么返回最小值+1
+        else {
+            return Math.min(f(root.left), f(root.right)) + 1;
+        }
+    }
+}
+```
+
+#### 112. 路径总和 | 树形 dp | easy
+
+##### 1）树形 dp | O（n）
+
+- **思路**：树形 dp，不断判断是向左、向右子树获取信息，然后把结果向上汇报，只有碰到叶子节点，才决定路径总和是否等于剩余的 rest，其他的则在原始的 rest 上扣减 val，周而复始。
+- **结论**：时间，0 ms，100.00%，空间，41.5 mb，24.36%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    public boolean hasPathSum(TreeNode root, int rest) {
+        // 通过设计, 这里不会到达
+        if(root == null) {
+            return false;
+        }
+        // 到达叶子节点
+        if(root.left == null && root.right == null) {
+            return rest == root.val;
+        }
+
+        // 非叶子节点
+        rest -= root.val;
+
+        // 如果不存在左孩子, 那么就看右孩子
+        if(root.left == null) {
+            return hasPathSum(root.right, rest);
+        } 
+        // 如果不存在右孩子, 那么就看左孩子
+        else if(root.right == null) {
+            return hasPathSum(root.left, rest);
+        }
+        // 如果左、右孩子同时存在, 那么就同时看左右孩子
+        else {
+            return hasPathSum(root.left, rest) || hasPathSum(root.right, rest);
+        }
+    }
+}
+```
+
+#### 113. 路径总和 II | 树形 dp | medium
+
+##### 1）树形 dp + 回溯 | O（n）
+
+- **思路**：参考《112. 路径总和》的思路，不断向下收集信息，但不同的是，这里结合了回溯，对路上符合条件的进行收集，每碰到一个叶子节点，则判断是否符合条件，符合的则结算，周而复始。
+- **结论**：时间，1 ms，99.98%，空间，42.1 mb，12.64%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
+
+```shell
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    private List<List<Integer>> res;
+    private List<Integer> cur;
+
+    public List<List<Integer>> pathSum(TreeNode root, int rest) {
+        this.res = new ArrayList<>();
+        this.cur = new ArrayList<>();
+        f(root, rest);
+        return res;
+    }
+
+    private void f(TreeNode root, int rest) {
+        // 通过设计, 这里不会到达
+        if(root == null) {
+            return;
+        }
+        // 到达叶子节点, 结算是否存在路径
+        if(root.left == null && root.right == null) {
+            if(rest == root.val) {
+                cur.add(root.val);
+                res.add(new ArrayList<>(cur));
+                cur.remove(cur.size() - 1);
+            }
+            return;
+        }
+
+        // 非叶子节点, 则追加当前节点的值
+        cur.add(root.val);
+        rest -= root.val;
+
+        // 如果不存在左孩子, 那么就看右孩子
+        if(root.left == null) {
+            f(root.right, rest);
+        } 
+        // 如果不存在右孩子, 那么就看左孩子
+        else if(root.right == null) {
+            f(root.left, rest);
+        }
+        // 如果左、右孩子同时存在, 那么就同时看左右孩子
+        else {
+            f(root.left, rest);
+            f(root.right, rest);
+        }
+
+        // 回溯
+        cur.remove(cur.size() - 1);
+    }
+}
+```
+
 #### 114. 二叉树展开为链表 | medium
 
 ##### 1）暴力解法1 | O（2n）
@@ -3926,6 +4394,346 @@ class Solution {
             }
         }
         return precursor;
+    }
+}
+```
+
+#### 116. 填充每个节点的下一个右侧节点指针 | medium
+
+##### 1）深度优先搜索 + 递归 | O（ [log n + 1] *  log n / 2）
+
+- **思路**：见代码注释。
+- **结论**：时间，0 ms，100%，空间，41.6 mb，45.41%，时间上，由于 1 级节点最多会被访问 1 次，2 级最多会被访问 2 次，3 级 3 次，log n 级就 log n 次，所以整体时间复杂度为 O（1 + 2 + ... + log n）= [log n + 1] *  log n / 2，空间上，由于完美二叉树的递归栈深度最大为 log n，所以额外空间复杂度为 O（log n）。 
+
+```java
+/*
+// Definition for a Node.
+class Node {
+    public int val;
+    public Node left;
+    public Node right;
+    public Node next;
+
+    public Node() {}
+    
+    public Node(int _val) {
+        val = _val;
+    }
+
+    public Node(int _val, Node _left, Node _right, Node _next) {
+        val = _val;
+        left = _left;
+        right = _right;
+        next = _next;
+    }
+};
+*/
+class Solution {
+    public Node connect(Node root) {
+        if(root == null) {
+            return root;
+        }
+
+        // 先连接好根的左和右
+        Node left = root.left, right = root.right;
+        while(left != null && right != null) {
+            left.next = right;
+            left = left.right;
+            right = right.left;
+        }
+
+        // 再交给左、右子树自己处理各自的左和右
+        connect(root.left);
+        connect(root.right);
+        return root;
+    }
+}
+```
+
+##### 2）广度优先搜索 + 迭代 + 队列 | O（n）
+
+- **思路**：层序遍历的套路，不过这里由于不用按层号分类，所以可以通过队列的大小，来获取同一层的节点，而不用一个 map 来标记层号。
+- **结论**：时间，2 ms，68.80%，空间，41.9 mb，14.18%，时间上，由于需要遍历整棵二叉树的节点，所以时间复杂度为 O（n），空间上，由于使用了一张最多 2^[log n - 1] = O（n/2）长的队列，所以额外空间复杂度为 O（n/2）。
+
+```java
+/*
+// Definition for a Node.
+class Node {
+    public int val;
+    public Node left;
+    public Node right;
+    public Node next;
+
+    public Node() {}
+    
+    public Node(int _val) {
+        val = _val;
+    }
+
+    public Node(int _val, Node _left, Node _right, Node _next) {
+        val = _val;
+        left = _left;
+        right = _right;
+        next = _next;
+    }
+};
+*/
+class Solution {
+    public Node connect(Node root) {
+        if(root == null) {
+            return null;
+        }
+        
+        Queue<Node> queue = new LinkedList<>();
+        queue.offer(root);
+
+        int size;
+        Node node, pre;
+        while(!queue.isEmpty()) {
+            size = queue.size();
+            pre = null;
+
+            for(int i = 0; i < size; i++) {
+                node = queue.poll();
+                if(pre == null) {
+                    pre = node;
+                } else {
+                    pre.next = node;
+                    pre = node;
+                }
+                
+                // 判断左孩子，二叉树通用
+                if(node.left != null) {                   
+                    queue.offer(node.left);
+                }
+                // 判断右孩子，二叉树通用
+                if(node.right != null) {
+                    queue.offer(node.right);
+                }
+            }
+        }
+
+        return root;
+    }
+}
+```
+
+##### 3）广度优先搜索 + 迭代 + 链表 | O（2 * n）
+
+- **思路**：在 2 的基础上，通过遍历上层组装好的链表，来省去用队列来辅助遍历，uphead 代表上层的链表，dummy 代表下层链表的哑节点，然后 dummpy 不断连接 uphead 的左右孩子，当上层链表遍历完毕，则继续移动到下一层链表，周而复始。
+- **结论**：时间，0 ms，100%，空间，41.4 mb，73.66%，时间上，由于每个节点最多被访问 2 次，所以整体时间复杂度为 O（2 * n），空间上，由于只使用有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+/*
+// Definition for a Node.
+class Node {
+    public int val;
+    public Node left;
+    public Node right;
+    public Node next;
+
+    public Node() {}
+    
+    public Node(int _val) {
+        val = _val;
+    }
+
+    public Node(int _val, Node _left, Node _right, Node _next) {
+        val = _val;
+        left = _left;
+        right = _right;
+        next = _next;
+    }
+};
+*/
+class Solution {
+    public Node connect(Node root) {
+        if(root == null) {
+            return null;
+        }
+
+        Node upHead = root, dummy, pre;
+        while(upHead != null) {
+            // 构造哑节点
+            pre = dummy = new Node();
+
+            // 开始连接
+            while(upHead != null) {
+                // 有左
+                if(upHead.left != null) {
+                    pre.next = upHead.left;
+                    pre = pre.next;
+                }
+                // 有右
+                if(upHead.right != null) {
+                    pre.next = upHead.right;
+                    pre = pre.next;
+                }
+
+                // 当前upHead的下层链表设置完毕, 则移动上层upHead
+                upHead = upHead.next;
+            }
+
+            // 上层链表走到尽头了, 则继续移动到下一层
+            upHead = dummy.next;
+        }
+
+        return root;
+    }
+}
+```
+
+#### 117. 填充每个节点的下一个右侧节点指针 II | medium
+
+由于这里是非满二叉树，可能会出现当前层，不知道下层的孩子的分布，导致出现选错左右的情况，所以 dfs 实现起来比较麻烦，需要分各种情况讨论，代码与 116 题的不统一，且性能来得也没有 bfs 的高，因此，这里就就不做对应的实现了。
+
+##### 1）广度优先搜索 + 迭代 + 队列 | O（n）
+
+见《116. 填充每个节点的下一个右侧节点指针》的解法 2。
+
+##### 2）广度优先搜索 + 迭代 + 链表 | O（2 * n）
+
+见《116. 填充每个节点的下一个右侧节点指针》的解法 3。
+
+#### 124. 二叉树中的最大路径和 | 树形 dp | hard
+
+##### 1）树形 dp 递归 | O（n）
+
+- **思路**：
+  1. 通过根节点不断向下收集左孩子和右孩子的信息，来实现树形 dp。
+  2. 根据题意是求最大路径和，而最大路径和有三个方向：左边+中间、右边+中间、左边+中间+右边，因此设计的递归返回的数据结构有：左边+中间最大和 lmax、右边+中间最大和 rmax、当前的最大路径和 max，来用于给上层组装它自己的最大路径和，其中任意一层 root 可以分为 4 种情况：
+     1. root 既没有左孩子也没有右孩子：则直接用当前值作为 dp 信息 返回给上一层。
+     2. root 既有左孩子又有右孩子：则先获取左右孩子的 dp 信息，来辅助构建自己的 dp 信息：
+        - 当前 lmax = Max{当前值，当前值+左孩子的lmax，当前值+左孩子的rmax}。
+        - 当前 rmax = Max{当前值，当前值+右孩子的lmax，当前值+右孩子的rmax}。
+        - 当前 max = Max{当前值，当期 lmax，当前 rmax， 当前 lmax +当前 rmax - 当前值，左孩子的 max，右孩子的 max}。
+     3. root 只有左孩子没有右孩子：则只获取左孩子的 dp 信息，来辅助构建自己的 dp 信息：
+        - 当前 lmax = Max{当前值，当前值+左孩子的lmax，当前值+左孩子的rmax}。
+        - 当前 rmax = Max{当前值}。
+        - 当前 max = Max{当前值，当期 lmax，当前 rmax， 当前 lmax +当前 rmax - 当前值，左孩子的 max}。
+     4. root 没有左孩子只有右孩子：则只获取右孩子的 dp 信息，来辅助构建自己的 dp 信息：
+        - 当前 lmax = Max{当前值，当前值+右孩子的lmax，当前值+右孩子的rmax}。
+        - 当前 rmax = Max{当前值}。
+        - 当前 max = Max{当前值，当期 lmax，当前 rmax， 当前 lmax +当前 rmax - 当前值，右孩子的 max}。
+- **结论**：时间，1ms，46.45%，空间，40.7mb，5.08%，虽然效率不是很高，但胜在稳，直接使用树形 dp 的套路来思考又快又准！
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+
+    class NodeInfo {
+        int lmax;// 左边含根结点最大路径和
+        int rmax;// 右边含根结点最大路径和
+        int max;// 根结点开始的树的最大路径和
+
+        NodeInfo(int val) {
+            this.lmax = val;
+            this.rmax = val;
+            this.max = val;
+        }
+    }
+
+    public int maxPathSum(TreeNode root) {
+        if(root == null) {
+            return 0;
+        }
+        return f(root).max;
+    }
+
+    // f代表获取以root作为根结点的NodeInfo信息, 要保证root不为空!
+    private NodeInfo f(TreeNode root) {
+        NodeInfo curInfo = new NodeInfo(root.val);
+
+        if(root.left != null && root.right != null) {
+            NodeInfo lInfo = f(root.left);
+            NodeInfo rInfo = f(root.right);
+
+            // 左边含根结点最大路径和
+            curInfo.lmax = Math.max(
+                root.val,
+                Math.max(root.val + lInfo.lmax, root.val + lInfo.rmax)
+            );
+
+            // 右边含根结点最大路径和
+            curInfo.rmax = Math.max(
+                root.val, 
+                Math.max(root.val + rInfo.lmax, root.val + rInfo.rmax)
+            );
+
+            // 根结点开始的树的最大路径和
+            curInfo.max = Math.max(
+                // 中间, 左边最大, 右边最大
+                Math.max(root.val, Math.max(lInfo.max, rInfo.max)),
+                Math.max(
+                    // 左边中间, 右边中间
+                    Math.max(curInfo.lmax, curInfo.rmax),
+                    // 左边中间 + 右边中间 - 中间
+                    curInfo.lmax + curInfo.rmax - root.val
+                )
+            );
+        } else if(root.left != null) {
+            NodeInfo lInfo = f(root.left);
+
+            // 左边含根结点最大路径和
+            curInfo.lmax = Math.max(
+                root.val,
+                Math.max(root.val + lInfo.lmax, root.val + lInfo.rmax)
+            );
+
+            // 右边含根结点最大路径和
+            curInfo.rmax = root.val;
+
+            // 根结点开始的树的最大路径和
+            curInfo.max = Math.max(
+                // 中间, 左边最大
+                Math.max(root.val, lInfo.max),
+                Math.max(
+                    // 左边中间, 右边中间
+                    Math.max(curInfo.lmax, curInfo.rmax),
+                    // 左边中间 + 右边中间 - 中间
+                    curInfo.lmax + curInfo.rmax - root.val
+                )
+            );
+        } else if(root.right != null) {
+            NodeInfo rInfo = f(root.right);
+
+            // 左边含根结点最大路径和
+            curInfo.lmax = root.val;
+
+            // 右边含根结点最大路径和
+            curInfo.rmax = Math.max(
+                root.val, 
+                Math.max(root.val + rInfo.lmax, root.val + rInfo.rmax)
+            );
+
+            // 根结点开始的树的最大路径和
+            curInfo.max = Math.max(
+                // 中间, 左边最大, 右边最大
+                Math.max(root.val, rInfo.max),
+                Math.max(
+                    // 左边中间, 右边中间
+                    Math.max(curInfo.lmax, curInfo.rmax),
+                    // 左边中间 + 右边中间 - 中间
+                    curInfo.lmax + curInfo.rmax - root.val
+                )
+            );
+        }
+
+        return curInfo;
     }
 }
 ```
@@ -4371,486 +5179,6 @@ public class Codec {
 // Codec ser = new Codec();
 // Codec deser = new Codec();
 // TreeNode ans = deser.deserialize(ser.serialize(root));
-```
-
-#### 538. 把二叉搜索树转换为累加树 | medium
-
-##### 1）深度优先搜索 - 局部变量法 | O（n）
-
-- **思路**：
-  1. 设计一个 f（root，rsum）函数，代表右孩子累加 rsum，当前节点累加右孩子 + rsum，左孩子累加右孩子 + rsum + 当前节点。
-  2. f 函数分为 3 个累加部分，首先累加右孩子，然后把结果累加到当前节点上，最后再把当前节点累加后的结果累加到左孩子上再返回。
-- **结论**：时间，0ms，100%，空间，41.3mb，7.99%，时间上，由于需要遍历整棵树所有节点，所以时间复杂度为 O（n），空间上，由于递归深度最大为 logn，所以额外空间复杂度为 O（logn）。
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Solution {
-
-    public TreeNode convertBST(TreeNode root) {
-        f(root, 0);
-        return root;
-    }
-
-    // f代表右孩子累加 rsum，当前节点累加右孩子 + rsum，左孩子累加右孩子 + rsum + 当前节点
-    private int f(TreeNode root, int rsum) {
-        // 当前为叶子节点, 没当前、没左、没右, 累加和为rsum自己
-        if(root == null) {
-            return rsum;
-        }
-
-        // 当前 + 获取右边累加后的rsum: 包括所有右孩子的左孩子们的累加!
-        root.val += f(root.right, rsum);
-
-        // rusm累加完左孩子后, 返回给父节点, 因为当前左孩子也会大于等于父节点的!
-        return f(root.left, root.val);
-    }
-}
-```
-
-##### 2）深度优先搜索 - 全局变量法 | O（n）
-
-- **思路**：
-  1. 与局部变量法的思路一样，也是反中序遍历，即右中左，因此，可以把 sum 累加变量放到全局变量上，然后递归函数调用就不用使用 int 参数和返回 int 值了，递归调法也类似，即先累加右、再右累加中、再右+中累加左再返回。
-  2. 不过，虽然左边统统累加了右边，但如果左边负得过于小，而右边正得也不大，那么最后形成的也不一定是倒叙的二叉搜索树，所以两者没什么关联~
-- **结论**：时间，0ms，100%，空间，41.5mb，6.15%，时间上，由于需要遍历整棵树所有节点，所以时间复杂度为 O（n），空间上，由于递归深度最大为 logn，所以额外空间复杂度为 O（logn）。
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Solution {
-
-    private int sum = 0;
-
-    public TreeNode convertBST(TreeNode root) {
-        if(root == null) {
-            return null;
-        }
-
-        // 先累加右孩子
-        convertBST(root.right);
-
-        // 再累加当前节点
-        sum += root.val;
-        root.val = sum;
-
-        // 最后累加左孩子
-        convertBST(root.left);
-
-        return root;
-    }
-}
-```
-
-#### 617. 合并二叉树 | easy
-
-##### 1）深度优先搜索 | O（n）
-
-- **思路**：二叉树遍历变种，这里改的是后序遍历，在左右孩子遍历处理完后，处理当前节点，把左右孩子返回的节点 + 当前累加的值，作为新的节点返回。
-- **结论**：时间，0ms，100%，空间，41.5mb，5.24%，时间上，由于是后序遍历，其遍历的最大值取决于两棵树中，节点多的那棵树，记 n = max{n1, n2}，所以时间复杂度为 O（n），空间上，额外空间复杂度取决于递归深度，为 O（logn）。
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Solution {
-    public TreeNode mergeTrees(TreeNode root1, TreeNode root2) {
-        if(root1 == null) {
-            return root2;
-        }
-        if(root2 == null) {
-            return root1;
-        }
-
-        TreeNode lnode = mergeTrees(root1.left, root2.left);
-        TreeNode rnode = mergeTrees(root1.right, root2.right);
-        return new TreeNode(root1.val + root2.val, lnode, rnode);
-    }
-}
-```
-
-#### 98. 验证二叉搜索树 | 树形 dp | medium
-
-##### 1）树形 dp 递归 | O（n）
-
-- **思路**：
-  1. 通过根节点不断向下收集左孩子和右孩子的信息，来实现树形 dp。
-  2. 由于需要左右孩子的信息来判断是否为二叉搜索树，所以结合概念得知，需要直到左、右孩子是否为二叉搜索树，以及最大值和最小值，因此需要建立一个特定数据结构 BstRes。
-  3. 如果收集到左右孩子的信息后，则还要进行判断，生成当前根节点的信息，包括是否为二叉搜索树、最大值和最小值。
-     1. 如果没有左右孩子，说明当前为叶子节点，那么返回是二叉搜索树，最大值为 val，最小值为 val。
-     2. 如果同时有左右孩子，且左、右孩子都为二叉搜索树、 val 大于左孩子的最大值、val 小于右孩子的最小值，那么返回是二叉搜索树，最小值为左孩子最小，最大值为右孩子最大，否则返回 false。
-     3. 如果只有左孩子，且左孩子为二叉搜索树、 val 大于左孩子的最大值，那么返回是二叉搜索树，最小值为左孩子最小，最大值为 val，否则返回 false。
-     4. 如果只有右孩子，且右孩子为二叉搜索树、 val 小于右孩子的最小值，那么返回是二叉搜索树，最小值为 val，最大值为右孩子最大，否则返回 false。
-- **结论**：时间，0ms，100%，38.1mb，51.71%，效率非常好，就这吧~
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Solution {
-
-    class BstRes {
-        TreeNode node;
-        boolean isBST;
-        int min;
-        int max;
-        
-        BstRes(TreeNode node, boolean isBST, int min, int max) {
-            this.node = node;
-            this.isBST = isBST;
-            this.min = min;
-            this.max = max;
-        }
-    }
-
-    public boolean isValidBST(TreeNode root) {
-        BstRes bstRes = f(root);
-        return bstRes.isBST;
-    }
-
-    private BstRes f(TreeNode root) {
-        if(root == null) {
-            return new BstRes(root, true, root.val, root.val);
-        }
-        if(root.left == null && root.right == null) {
-            return new BstRes(root, true, root.val, root.val);
-        } 
-        // 左孩子不为空, 右孩子不为空
-        else if(root.left != null && root.right != null) {
-            BstRes leftRes = f(root.left);
-            BstRes rightRes = f(root.right);
-
-            if(leftRes.isBST && rightRes.isBST
-                & leftRes.max < root.val && root.val < rightRes.min) {
-                return new BstRes(root, true, leftRes.min, rightRes.max);
-            }
-        } 
-        // 左孩子不为空, 右孩子为空
-        else if(root.left != null){
-            BstRes leftRes = f(root.left);
-            if(leftRes.max < root.val && leftRes.isBST) {
-                return new BstRes(root, true, leftRes.min, root.val);
-            }
-        } 
-        // 右孩子不为空, 左孩子为空
-        else {
-            BstRes rightRes = f(root.right);
-            if(root.val < rightRes.min && rightRes.isBST) {
-                return new BstRes(root, true, root.val, rightRes.max);
-            }
-        }
-
-        return new BstRes(root, false, Integer.MAX_VALUE, Integer.MIN_VALUE);
-    }
-}
-```
-
-#### 110. 平衡二叉树 | 树形 dp | easy
-
-##### 1）树形 dp | O（n）
-
-- **思路**：树形 dp，不断向左、向右子树获取信息，然后聚合判断是否平衡，最后把结果向上汇报，周而复始。
-- **结论**：时间，1 ms，44.70%，空间，41 mb，68.21%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Info {
-    int height;
-    boolean isBalanced;
-    
-    Info(int height, boolean isBalanced) {
-        this.height = height;
-        this.isBalanced = isBalanced;
-    }
-}
-class Solution {
-    public boolean isBalanced(TreeNode root) {
-        if(root == null) {
-            return true;
-        }
-
-        return f(root).isBalanced;
-    }
-
-    private Info f(TreeNode root) {
-        if(root == null) {
-            return new Info(0, true);
-        }
-
-        Info li = f(root.left);
-        Info ri = f(root.right);
-
-        // 左平衡、右平衡、整体平衡
-        if(li.isBalanced && ri.isBalanced && Math.abs(li.height - ri.height) <= 1) {
-            return new Info(Math.max(li.height, ri.height) + 1, true);
-        } 
-        // 非平衡二叉树
-        else {
-            return new Info(Math.max(li.height, ri.height) + 1, false);
-        }
-    }
-}
-```
-
-##### 2）树形 dp 优化 | O（n）
-
-- **思路**：在 1 的基础上，递归函数不再返回 Info 数据结构，而只返回 root 二叉树的高度，以及同时利用这个值等于 -1，来表示 root 二叉树非平衡，以减少内存开销。
-- **结论**：时间，0 ms，100.00%，空间，41.3 mb，27.58%，时间上，由于需要遍历整棵二叉树，所以时间复杂度为 O（n），空间上，由于树可能退化为链表，即递归栈深度最大为 n，所以额外空间复杂度为 O（n）。
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Solution {
-    public boolean isBalanced(TreeNode root) {
-        if(root == null) {
-            return true;
-        }
-        return isBalanced(f(root));
-    }
-
-    // 根据高度, 判断二叉树是否平衡
-    private boolean isBalanced(int height) {
-        return height != -1;
-    }
-
-    private int f(TreeNode root) {
-        if(root == null) {
-            return 0;
-        }
-
-        int lh = f(root.left);
-        int rh = f(root.right);
-
-        // 左平衡、右平衡、整体平衡
-        if(isBalanced(lh) && isBalanced(rh) && Math.abs(lh - rh) <= 1) {
-            return Math.max(lh, rh) + 1;
-        } 
-        // 非平衡二叉树
-        else {
-            return -1;
-        }
-    }
-}
-```
-
-#### 124. 二叉树中的最大路径和 | 树形 dp | hard
-
-##### 1）树形 dp 递归 | O（n）
-
-- **思路**：
-  1. 通过根节点不断向下收集左孩子和右孩子的信息，来实现树形 dp。
-  2. 根据题意是求最大路径和，而最大路径和有三个方向：左边+中间、右边+中间、左边+中间+右边，因此设计的递归返回的数据结构有：左边+中间最大和 lmax、右边+中间最大和 rmax、当前的最大路径和 max，来用于给上层组装它自己的最大路径和，其中任意一层 root 可以分为 4 种情况：
-     1. root 既没有左孩子也没有右孩子：则直接用当前值作为 dp 信息 返回给上一层。
-     2. root 既有左孩子又有右孩子：则先获取左右孩子的 dp 信息，来辅助构建自己的 dp 信息：
-        - 当前 lmax = Max{当前值，当前值+左孩子的lmax，当前值+左孩子的rmax}。
-        - 当前 rmax = Max{当前值，当前值+右孩子的lmax，当前值+右孩子的rmax}。
-        - 当前 max = Max{当前值，当期 lmax，当前 rmax， 当前 lmax +当前 rmax - 当前值，左孩子的 max，右孩子的 max}。
-     3. root 只有左孩子没有右孩子：则只获取左孩子的 dp 信息，来辅助构建自己的 dp 信息：
-        - 当前 lmax = Max{当前值，当前值+左孩子的lmax，当前值+左孩子的rmax}。
-        - 当前 rmax = Max{当前值}。
-        - 当前 max = Max{当前值，当期 lmax，当前 rmax， 当前 lmax +当前 rmax - 当前值，左孩子的 max}。
-     4. root 没有左孩子只有右孩子：则只获取右孩子的 dp 信息，来辅助构建自己的 dp 信息：
-        - 当前 lmax = Max{当前值，当前值+右孩子的lmax，当前值+右孩子的rmax}。
-        - 当前 rmax = Max{当前值}。
-        - 当前 max = Max{当前值，当期 lmax，当前 rmax， 当前 lmax +当前 rmax - 当前值，右孩子的 max}。
-- **结论**：时间，1ms，46.45%，空间，40.7mb，5.08%，虽然效率不是很高，但胜在稳，直接使用树形 dp 的套路来思考又快又准！
-
-```java
-/**
- * Definition for a binary tree node.
- * public class TreeNode {
- *     int val;
- *     TreeNode left;
- *     TreeNode right;
- *     TreeNode() {}
- *     TreeNode(int val) { this.val = val; }
- *     TreeNode(int val, TreeNode left, TreeNode right) {
- *         this.val = val;
- *         this.left = left;
- *         this.right = right;
- *     }
- * }
- */
-class Solution {
-
-    class NodeInfo {
-        int lmax;// 左边含根结点最大路径和
-        int rmax;// 右边含根结点最大路径和
-        int max;// 根结点开始的树的最大路径和
-
-        NodeInfo(int val) {
-            this.lmax = val;
-            this.rmax = val;
-            this.max = val;
-        }
-    }
-
-    public int maxPathSum(TreeNode root) {
-        if(root == null) {
-            return 0;
-        }
-        return f(root).max;
-    }
-
-    // f代表获取以root作为根结点的NodeInfo信息, 要保证root不为空!
-    private NodeInfo f(TreeNode root) {
-        NodeInfo curInfo = new NodeInfo(root.val);
-
-        if(root.left != null && root.right != null) {
-            NodeInfo lInfo = f(root.left);
-            NodeInfo rInfo = f(root.right);
-
-            // 左边含根结点最大路径和
-            curInfo.lmax = Math.max(
-                root.val,
-                Math.max(root.val + lInfo.lmax, root.val + lInfo.rmax)
-            );
-
-            // 右边含根结点最大路径和
-            curInfo.rmax = Math.max(
-                root.val, 
-                Math.max(root.val + rInfo.lmax, root.val + rInfo.rmax)
-            );
-
-            // 根结点开始的树的最大路径和
-            curInfo.max = Math.max(
-                // 中间, 左边最大, 右边最大
-                Math.max(root.val, Math.max(lInfo.max, rInfo.max)),
-                Math.max(
-                    // 左边中间, 右边中间
-                    Math.max(curInfo.lmax, curInfo.rmax),
-                    // 左边中间 + 右边中间 - 中间
-                    curInfo.lmax + curInfo.rmax - root.val
-                )
-            );
-        } else if(root.left != null) {
-            NodeInfo lInfo = f(root.left);
-
-            // 左边含根结点最大路径和
-            curInfo.lmax = Math.max(
-                root.val,
-                Math.max(root.val + lInfo.lmax, root.val + lInfo.rmax)
-            );
-
-            // 右边含根结点最大路径和
-            curInfo.rmax = root.val;
-
-            // 根结点开始的树的最大路径和
-            curInfo.max = Math.max(
-                // 中间, 左边最大
-                Math.max(root.val, lInfo.max),
-                Math.max(
-                    // 左边中间, 右边中间
-                    Math.max(curInfo.lmax, curInfo.rmax),
-                    // 左边中间 + 右边中间 - 中间
-                    curInfo.lmax + curInfo.rmax - root.val
-                )
-            );
-        } else if(root.right != null) {
-            NodeInfo rInfo = f(root.right);
-
-            // 左边含根结点最大路径和
-            curInfo.lmax = root.val;
-
-            // 右边含根结点最大路径和
-            curInfo.rmax = Math.max(
-                root.val, 
-                Math.max(root.val + rInfo.lmax, root.val + rInfo.rmax)
-            );
-
-            // 根结点开始的树的最大路径和
-            curInfo.max = Math.max(
-                // 中间, 左边最大, 右边最大
-                Math.max(root.val, rInfo.max),
-                Math.max(
-                    // 左边中间, 右边中间
-                    Math.max(curInfo.lmax, curInfo.rmax),
-                    // 左边中间 + 右边中间 - 中间
-                    curInfo.lmax + curInfo.rmax - root.val
-                )
-            );
-        }
-
-        return curInfo;
-    }
-}
 ```
 
 #### 337. 打家劫舍3 | 树形 dp | medium
@@ -5399,6 +5727,101 @@ class Solution {
 }
 ```
 
+#### 538. 把二叉搜索树转换为累加树 | medium
+
+##### 1）深度优先搜索 - 局部变量法 | O（n）
+
+- **思路**：
+  1. 设计一个 f（root，rsum）函数，代表右孩子累加 rsum，当前节点累加右孩子 + rsum，左孩子累加右孩子 + rsum + 当前节点。
+  2. f 函数分为 3 个累加部分，首先累加右孩子，然后把结果累加到当前节点上，最后再把当前节点累加后的结果累加到左孩子上再返回。
+- **结论**：时间，0ms，100%，空间，41.3mb，7.99%，时间上，由于需要遍历整棵树所有节点，所以时间复杂度为 O（n），空间上，由于递归深度最大为 logn，所以额外空间复杂度为 O（logn）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+
+    public TreeNode convertBST(TreeNode root) {
+        f(root, 0);
+        return root;
+    }
+
+    // f代表右孩子累加 rsum，当前节点累加右孩子 + rsum，左孩子累加右孩子 + rsum + 当前节点
+    private int f(TreeNode root, int rsum) {
+        // 当前为叶子节点, 没当前、没左、没右, 累加和为rsum自己
+        if(root == null) {
+            return rsum;
+        }
+
+        // 当前 + 获取右边累加后的rsum: 包括所有右孩子的左孩子们的累加!
+        root.val += f(root.right, rsum);
+
+        // rusm累加完左孩子后, 返回给父节点, 因为当前左孩子也会大于等于父节点的!
+        return f(root.left, root.val);
+    }
+}
+```
+
+##### 2）深度优先搜索 - 全局变量法 | O（n）
+
+- **思路**：
+  1. 与局部变量法的思路一样，也是反中序遍历，即右中左，因此，可以把 sum 累加变量放到全局变量上，然后递归函数调用就不用使用 int 参数和返回 int 值了，递归调法也类似，即先累加右、再右累加中、再右+中累加左再返回。
+  2. 不过，虽然左边统统累加了右边，但如果左边负得过于小，而右边正得也不大，那么最后形成的也不一定是倒叙的二叉搜索树，所以两者没什么关联~
+- **结论**：时间，0ms，100%，空间，41.5mb，6.15%，时间上，由于需要遍历整棵树所有节点，所以时间复杂度为 O（n），空间上，由于递归深度最大为 logn，所以额外空间复杂度为 O（logn）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+
+    private int sum = 0;
+
+    public TreeNode convertBST(TreeNode root) {
+        if(root == null) {
+            return null;
+        }
+
+        // 先累加右孩子
+        convertBST(root.right);
+
+        // 再累加当前节点
+        sum += root.val;
+        root.val = sum;
+
+        // 最后累加左孩子
+        convertBST(root.left);
+
+        return root;
+    }
+}
+```
+
 #### 543. 二叉树的直径 | 树形 dp | easy
 
 ##### 1）暴力递归1 | O（n^2）
@@ -5544,6 +5967,45 @@ class Solution {
         int rh = getHight(root.right);
         max = Math.max(max, lh + rh);
         return lh > rh? lh + 1 : rh + 1;
+    }
+}
+```
+
+#### 617. 合并二叉树 | easy
+
+##### 1）深度优先搜索 | O（n）
+
+- **思路**：二叉树遍历变种，这里改的是后序遍历，在左右孩子遍历处理完后，处理当前节点，把左右孩子返回的节点 + 当前累加的值，作为新的节点返回。
+- **结论**：时间，0ms，100%，空间，41.5mb，5.24%，时间上，由于是后序遍历，其遍历的最大值取决于两棵树中，节点多的那棵树，记 n = max{n1, n2}，所以时间复杂度为 O（n），空间上，额外空间复杂度取决于递归深度，为 O（logn）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    public TreeNode mergeTrees(TreeNode root1, TreeNode root2) {
+        if(root1 == null) {
+            return root2;
+        }
+        if(root2 == null) {
+            return root1;
+        }
+
+        TreeNode lnode = mergeTrees(root1.left, root2.left);
+        TreeNode rnode = mergeTrees(root1.right, root2.right);
+        return new TreeNode(root1.val + root2.val, lnode, rnode);
     }
 }
 ```
@@ -6418,7 +6880,7 @@ class Solution {
 }
 ```
 
-#### 2309. 第 298 周赛 - 重排字符形成目标字符串 | easy
+#### 2309. 第 298 周赛 - 兼具大小写的最好英文字母 | easy
 
 ##### 1）哈希表 + 枚举 | O（n + 26）
 
@@ -16352,254 +16814,6 @@ class Solution {
 }
 ```
 
-#### 121. 买卖股票的最佳时机 | easy
-
-##### 1）暴力解法 | O（n^2）
-
-- **思路**：
-  1. 根据题意，只能买卖一次，所以只要保证买在最低点，卖在最高点，且最低点在最高点之前即可。
-  2. 这样可以设计一个 f（start）的函数，来表示 [start...end]天内买卖股票能够得到的最大利润，其中买入点就是 start，而卖出点由最大利润来决定。
-  3. 然后循环判断出最大的买入点，即可得到最大的利润。
-- **结论**：执行超时，由于每次比较都没研究子过程的数据状态，所以浪费了很多次的计算，因此还可以继续优化。
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length == 0) {
-            return 0;
-        }
-
-        int max = Integer.MIN_VALUE;
-        for(int i = 0; i < prices.length; i++) {
-            max = Math.max(max, f(prices, i));
-        }
-
-        return max;
-    }
-
-    // f表示[start...end]天内买卖股票能够得到的最大利润
-    private int f(int[] prices, int start) {
-        if(start < 0 || start >= prices.length) {
-            return 0;
-        }
-
-        int max = Integer.MIN_VALUE;
-        for(int i = start; i < prices.length; i++) {
-            max = Math.max(max, prices[i] - prices[start]);
-        }
-
-        return max;
-    }
-}
-```
-
-##### 2）极值法 | O（n）
-
-- **思路**：
-  1. 从左到右遍历，每次找到极小值则记录起来，用于与后面的股票价格相比，得出的最大利润则是答案。
-  2. 其中，如果遇到极小值是比之前的更小，此时算利润的话是为负数，肯定不是最大值，所以只更新掉替换之前极小值即可，无需计算利润。
-- **结论**：时间，2ms，88.95%，空间，51mb，90.14%， 是数学的求极值问题，所以用暴力递归 -> 记忆化搜索 -> 动态规划是想不出来的！
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }
-
-        int max = 0, minPrice = prices[0];
-        for(int i = 1; i < prices.length; i++) {
-            if(prices[i] == minPrice) {
-                continue;
-            } else if(prices[i] < minPrice) {
-                minPrice = prices[i];
-            } else {
-                max = Math.max(max, prices[i] - minPrice);
-            }
-        }
-
-        return max;
-    }
-}
-```
-
-#### 122. 买卖股票的最佳时机 II | medium
-
-##### 1）暴力递归 | O（4 * n）
-
-- **思路**：
-  1. 指定一个 f（isBuy，start）函数，代表从 start 开始买入，获得的最大收入是多少。然后就要分情况讨论了：
-  2. 当 isBuy == 1，说明是买入：
-     - 1）如果 start 是最后一天，那么就返回 0，代表不能再买入，也不会有额外的收入了。
-     - 2）如果 start 是非最后一天，那么就有两种情况，要么当天买入，要么后面再买入，返回最大值返回上一层就好。
-  3. 当 isBuy == 0，说明是卖出：
-     - 1）如果 start 是最后一天，那么就返回当前价格作为收入，代表今天就要卖出了，不卖出就不会有收入了。
-     - 2）如果 start 是非最后一天，那么就有两种情况，要么当天卖出，要么后面再卖出，返回最大值返回上一层就好。
-- **结论**：时间，执行超时，时间上，由于最多情况下需要调用 4 次 f（isBuy，start）函数，即来回遍历 4 次数组，所以时间复杂度为 O（4 * n），空间上，由于是二元参数，其栈深度最大为 2 * n 长，所以额外空间复杂度为 O（2 * n）。
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length == 0) {
-            return 0;
-        }
-        
-        return f(prices, 1, 0);
-    }
-
-    // f代表从start天开始买入, 获得的最大收入是多少
-    private int f(int[] prices, int isBuy, int start) {
-        // 最后一天
-        if(start == prices.length - 1) {
-            return isBuy == 1? 0 : prices[start];
-        }
-
-        // 非最后一天
-        // 买入
-        if(isBuy == 1) {
-            return Math.max(
-                // 当天买入
-                -prices[start] + f(prices, 0, start + 1),
-                // 后面再买入
-                f(prices, 1, start + 1)
-            );
-        }
-        // 卖出
-        else {
-            return Math.max(
-                // 当天卖出
-                prices[start] + f(prices, 1, start + 1),
-                // 后面再卖出
-                f(prices, 0, start + 1)
-            );
-        }
-    }
-}
-```
-
-##### 2）记忆化搜索 | O（2 * n）
-
-- **思路**：在暴力递归的基础上，增加 dp 二维数组缓存，如果发现缓存中存在，则返回缓存中的数据，如果发现缓存中不存在，则根据暴力递归去判断，得出的结果先设置到缓存中，再返回上一层。
-- **结论**：时间，3ms，24.25%，空间，45.2mb，5.15%，时间上，由于最多只需要遍历 2 * 1 次数组，所以时间复杂度为 O（2 * n），空间上，由于是二元参数，其栈深度最大为 2 * n 长，所以额外空间复杂度为 O（2 * n）。
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length == 0) {
-            return 0;
-        }
-        
-        int[][] dp = new int[2][prices.length];
-        Arrays.fill(dp[0], -1);
-        Arrays.fill(dp[1], -1);
-
-        return f(prices, dp, 1, 0);
-    }
-
-    // f代表从start天开始买入, 获得的最大收入是多少
-    private int f(int[] prices, int[][] dp, int isBuy, int start) {
-        // 最后一天
-        if(start == prices.length - 1) {
-            return isBuy == 1? 0 : prices[start];
-        }
-        if(dp[isBuy][start] != -1) {
-            return dp[isBuy][start];
-        }
-
-        // 非最后一天
-        // 买入
-        if(isBuy == 1) {
-            dp[isBuy][start] = Math.max(
-                // 当天买入
-                -prices[start] + f(prices, dp, 0, start + 1),
-                // 后面再买入
-                f(prices, dp, 1, start + 1)
-            );
-            return dp[isBuy][start];
-        }
-        // 卖出
-        else {
-            dp[isBuy][start] = Math.max(
-                // 当天卖出
-                prices[start] + f(prices, dp, 1, start + 1),
-                // 后面再卖出
-                f(prices, dp, 0, start + 1)
-            );
-            return dp[isBuy][start];
-        }
-    }
-}
-```
-
-##### 3）严格表结构优化 | O（n）
-
-- **思路**：在记忆化搜索的基础上，分析表结构的依赖关系，发现是前者依赖后者，所以就需要先初始化好最后一位，然后从后往前进行初始化，最后返回第一位买入的 dp 值即可。
-- **结论**：时间，2ms，32.26%，空间，41.4mb，34.13%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于使用了一张二维表，所以额外空间复杂度为 O（2 * n）。
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length == 0) {
-            return 0;
-        }
-        
-        int len = prices.length;
-        int[][] dp = new int[2][len];
-        
-        // 最后一天买
-        dp[1][len - 1] = 0;
-        // 最后一天卖
-        dp[0][len - 1] = prices[len - 1];
-
-        // 设置dp数组
-        for(int start = len - 2; start > -1; start--) {
-            // 买入
-            dp[1][start] = Math.max(
-                // 当天买入
-                -prices[start] + dp[0][start + 1],
-                // 后面再买入
-                dp[1][start + 1]
-            );
-            
-            // 卖出
-            dp[0][start] = Math.max(
-                // 当天卖出
-                prices[start] + dp[1][start + 1],
-                // 后面再卖出
-                dp[0][start + 1]
-            );
-        }
-
-        return dp[1][0];
-    }
-}
-```
-
-##### 2）极值法 | O（n）
-
-- **思路**：只要当天比前一天的价格要高，那么就买入前一天的股票，并在当前天卖出。
-- **局限**：这种做法对比现实，是拥有这超前的预知能力，买到了过去的股票，所以总能保持不亏，达到最大的利润。
-- **结论**：时间，1ms，82.25%，空间，41.3mb，40.60%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于只是用了额外的几个有限变量，所以额外空间复杂度为 O（1）。
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length == 0) {
-            return 0;
-        }
-
-        int profit = 0;
-        for(int i = 1; i < prices.length; i++) {
-            if(prices[i] > prices[i - 1]) {
-                profit += prices[i] - prices[i - 1];
-            }
-        }
-
-        return profit;
-    }
-}
-```
-
 #### 581. 最短无序连续子数组 | medium
 
 ##### 1）暴力解法 | O（n * logn + 2n）
@@ -22256,7 +22470,7 @@ class Solution {
 }
 ```
 
-#### 64. 最小路径和 | LCP | medium
+#### 64. 最小路径和 | 最短路径 | medium
 
 ##### 1）暴力递归 | O（m * n）
 
@@ -22747,7 +22961,7 @@ class Solution {
 }
 ```
 
-#### 97. 交错字符串 | medium
+#### 97. 交错字符串 | 线性 dp| medium
 
 ##### 1）线性 dp | O（n1 * n2）
 
@@ -22830,6 +23044,940 @@ class Solution {
         }
 
         return dp[n2];
+    }
+}
+```
+
+#### 115. 不同的子序列 | 线性 dp | hard
+
+##### 1）线性 dp | O（m * n）
+
+- **思路**：见代码注释。
+- **结论**：时间，5 ms，95.31%，空间，48.5 mb，41.77%，时间上，由于状态转移花费了 O（m * n），所以时间复杂度为 O（m * n），空间上，由于使用了一张 m 长的 schars、n 长的 tchars、m * n 长的 dp 数组，所以额外空间复杂度为 O（m + n + m * n）。
+
+```java
+class Solution {
+    public int numDistinct(String s, String t) {
+        char[] schars = s.toCharArray();
+        char[] tchars = t.toCharArray();
+        int m = schars.length, n = tchars.length;
+        if(m < n) {
+            return 0;
+        }
+
+        // 定义状态：dp[i][j]表示, s[i:]往后的字符串, 包含t[j:]往后的子序列的方案数
+        int[][] dp = new int[m + 1][n + 1];
+
+        // 初始化状态：j=n时, 表示s包含空串的方案数, 为1; i=m时, 表示空串包含t子序列的方案数, 为0
+        for(int i = 0; i <= m; i++) {
+            dp[i][n] = 1;
+        }
+        // 省略dp[m][j] = 0;
+
+        // 状态转移：s[i]==t[j], 那么可以选i、也可以不选i; s[i]!=t[j], 那么只能不选[i]
+        // 从下到上、从右到左, 进行状态转移
+        for(int i = m - 1; i > -1; i--) {
+            for(int j = n - 1; j > -1; j--) {
+                if(schars[i] == tchars[j]) {
+                    dp[i][j] =
+                        // 选i 
+                        dp[i + 1][j + 1]
+                        // 不选i
+                        + dp[i + 1][j];
+                }
+                else {
+                    // 不选i
+                    dp[i][j] = dp[i + 1][j];
+                }
+            }
+        }
+
+        // 获取结果：dp[0][0]表示, s完整串包含t完整子序列的方案数
+        return dp[0][0];
+    }
+}
+```
+
+#### 118. 杨辉三角 | 线性 dp | easy
+
+##### 1）公式递推 + 线性 dp | O（ [ n^2 + n ] / 2 ）
+
+- **思路**：见杨辉三角性质以及代码注释：
+
+  ![1660640133638](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660640133638.png)
+
+- **结论**：时间，0 ms，100%，空间，39.4 mb，23.76%，时间上，由于第 1 行有 1 个、第 2 行有 2 个 ... 第 n 行有 n 个位置，即一共需要设置 1 + 2 + ... + n = (n + 1) * n / 2 = [ n^2 + n ] / 2 个位置，所以整体时间复杂度为 O（ [ n^2 + n ] / 2 ），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public List<List<Integer>> generate(int n) {
+        List<List<Integer>> res = new ArrayList<>();
+        
+        // 从第0行开始, 存在n-1列
+        List<Integer> cur, pre;
+        for(int i = 0; i < n; i++) {
+            cur = new ArrayList<>();
+            res.add(cur);
+
+            // 从第0列开始, 第i行存在i+1列
+            for(int j = 0; j < i + 1; j++) {
+                // 每行的第0列和最后一列, 规定为1
+                if(j == 0 || j == i) {
+                    cur.add(1);
+                }
+                // 每行的中间列: (i, j) = (i-1, j-1) + (i-1, j)
+                else {
+                    pre = res.get(i - 1);
+                    cur.add(pre.get(j - 1) + pre.get(j));
+                }
+            }
+        }
+        
+        return res;  
+    }
+}
+```
+
+#### 119. 杨辉三角 II | 线性 dp | easy
+
+##### 1）公式递推 + 线性 dp | O（ [ n^2 + n ] / 2 ）
+
+- **思路**：参考《118. 杨辉三角》，不过这里使用 pre，把二维表优化成了一维表。
+- **结论**：时间，1 ms，77.25%，空间，39.4 mb，18.75%，时间上，由于第 1 行有 1 个、第 2 行有 2 个 ... 第 n 行有 n 个位置，即一共需要设置 1 + 2 + ... + n = (n + 1) * n / 2 = [ n^2 + n ] / 2 个位置，所以整体时间复杂度为 O（ [ n^2 + n ] / 2 ），空间上，由于使用了 1 + 2 + ... + n-1 = n * (n - 1) / 2 = [ n^2 - n ] / 2，所以额外空间复杂度为 O（ [ n^2 - n ] / 2 ）。
+
+```java
+class Solution {
+    public List<Integer> getRow(int n) {   
+        List<Integer> pre = new ArrayList<>();
+        pre.add(1);
+
+        // 第1行
+        if(n == 0) {
+            return pre;
+        }
+
+        // 从第1行开始, 存在n列
+        List<Integer> cur;
+        for(int i = 1; i <= n; i++) {
+            cur = new ArrayList<>();
+
+            // 从第0列开始, 第i行存在i+1列
+            for(int j = 0; j < i + 1; j++) {
+                // 每行的第0列和最后一列, 规定为1
+                if(j == 0 || j == i) {
+                    cur.add(1);
+                }
+                // 每行的中间列: (i, j) = (i-1, j-1) + (i-1, j)
+                else {
+                    cur.add(pre.get(j - 1) + pre.get(j));
+                }
+            }
+
+            pre = cur;
+        }
+        
+        return pre;  
+    }
+}
+```
+
+##### 2）公式递推 + 线性 dp + 空间压缩 | O（ [ n^2 + n ] / 2 ）
+
+- **思路**：在 1 的基础上，研究表依赖关系可知道，当前值依赖于上一行的前一个值以及当前值，所以右往左进行转移，从而把 pre 进一步压缩。
+- **结论**：时间，1 ms，77.25%，空间，39.4 mb，23.19%，时间上，由于第 1 行有 1 个、第 2 行有 2 个 ... 第 n 行有 n 个位置，即一共需要设置 1 + 2 + ... + n = (n + 1) * n / 2 = [ n^2 + n ] / 2 个位置，所以整体时间复杂度为 O（ [ n^2 + n ] / 2 ），空间上，由于最多需要 n + 1 个位置，所以额外空间复杂度为 O（n + 1）。
+
+```java
+class Solution {
+    public List<Integer> getRow(int n) {   
+        List<Integer> cur = new ArrayList<>();
+        cur.add(1);
+
+        // 从第1行开始, 存在n列
+        for(int i = 1; i <= n; i++) {
+            // 补充最后一个1
+            cur.add(1);
+
+            // 由于依赖前一行的j-1, 所以需要从右往左进行转移, 即从第i-1列到1列, 跳过每行的第0列和最后一列
+            for(int j = i - 1; j > 0; j--) {
+                // 每行的中间列: (i, j) = (i-1, j-1) + (i-1, j)
+                cur.set(j, cur.get(j - 1) + cur.get(j));
+            }
+        }
+        
+        return cur;  
+    }
+}
+```
+
+##### 3）数学 + 公式推导 + 线性 dp | O（n）
+
+![1660643773320](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660643773320.png)
+
+![1660643673823](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660643673823.png)
+
+- **思路**：推导上述公式可知，n 行的 m 值依赖于 m - 1 的值 * (n - m + 1) / m。
+- **结论**：时间，0 ms，100%，空间，39 mb，76.69%，时间上，由于只需要遍历一遍 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public List<Integer> getRow(int n) {
+        List<Integer> dp = new ArrayList<>();
+        dp.add(1);
+        
+        // 从左到右转移, dp[m] = dp[m-1] * [ (n - m + 1) / m ]
+        for(int m = 1; m <= n; m++) {
+            // 整数相乘再除, 保证精度没丢失
+            dp.add((int) divide(multiply(dp.get(m - 1), n - m + 1), m));
+        }
+
+        return dp;
+    }
+
+    // multiplier被乘数, factor乘数因子
+    private long multiply(long multiplier, long factor) {
+        return multiplier * factor;
+    }
+
+    // dividend被除数, divisor除数
+    private double divide(double dividend, double divisor) {
+        return dividend / divisor;
+    }
+}
+```
+
+#### 120. 三角形最小路径和 | 最短路径 | medium
+
+##### 1）LCP | O（ [ n^2 + n ] / 2 + n ）
+
+- **思路**：LCP 套路，见代码注释。
+- **结论**：时间，3 ms，77.03%，空间，40.9 mb，75.67%，时间上，由于分别需要初始化 1、2、...、n = (n + 1) * n / 2 = [ n^2 + n ] / 2 个位置的 dp 值，以及最后需要遍历 n 次取出最后一行的最小值，花费 O（n），所以整体时间复杂度为 O（ [ n^2 + n ] / 2 + n ），空间上，由于使用了一张 n * n 长的二维表，所以额外空间复杂度为 O（n^2）。
+
+```java
+class Solution {
+    public int minimumTotal(List<List<Integer>> list) {
+        // 定义状态：dp[i][j]表示, 从(0,0)走到(i,j)经过的最小路径和
+        int n = list.size();
+        int[][] dp = new int[n][n];
+
+        // 初始化状态：dp[0][0]表示, 从(0,0)走到(0,0)经过的最小路径和, 为list.get(0).get(0)
+        dp[0][0] = list.get(0).get(0);
+
+        // 状态转移：尝试从左上、正上走过来, 求出最小值
+        // 从上到下、从左到右进行转移
+        int preSize, curSize, cur;
+        for(int i = 1; i < n; i++) {
+            preSize = i;
+            curSize = i + 1;
+
+            for(int j = 0; j < curSize; j++) {
+                cur = list.get(i).get(j);
+
+                // 同时存在左上和正上
+                if(j - 1 > -1 && j < preSize) {
+                    dp[i][j] = Math.min(dp[i - 1][j - 1], dp[i - 1][j]) + cur;
+                }
+                // 只存在左上
+                else if(j - 1 > -1) {
+                    dp[i][j] = dp[i - 1][j - 1] + cur;
+                }
+                // 只存在正上
+                else {
+                    dp[i][j] = dp[i - 1][j] + cur;
+                }
+            }    
+        }
+
+        // 获取结果：对dp[n-1]一行, 求最小值
+        int min = Integer.MAX_VALUE;
+        for(int j = 0; j < n; j++) {
+            min = Math.min(min, dp[n - 1][j]);
+        }
+
+        return min;
+    }
+}
+```
+
+##### 2）LCP + 空间压缩 | O（[ n^2 + n ] / 2 + n ）
+
+- **思路**：经过研究发现，由于值只依赖于上一层的，左上和正上，即与当前行的值无关，所以可以省略掉行维度的数组，在初始化当前行的 dp 值时，认为 dp[j] 就是上一行的值。
+- **结论**：时间，3 ms，77.03%，空间，41.5 mb，5.40%，时间上，由于分别需要初始化 1、2、...、n = (n + 1) * n / 2 = [ n^2 + n ] / 2 个位置的 dp 值，以及最后需要遍历 n 次取出最后一行的最小值，花费 O（n），所以整体时间复杂度为 O（ [ n^2 + n ] / 2 + n ），空间上，由于使用了一张 n 长的一维表，所以额外空间复杂度为 O（n）。
+
+```java
+class Solution {
+    public int minimumTotal(List<List<Integer>> list) {
+        // 定义状态：dp[i][j]表示, 从(0,0)走到(i,j)经过的最小路径和
+        // 空间压缩：省略掉行维度的数组, 因此dp[j]表示从(上一行, 0)到(目前行, j)经过的最小路径和 
+        int n = list.size();
+        int[] dp = new int[n];
+
+        // 初始化状态：dp[0]表示, 从(0,0)走到(0,0)经过的最小路径和, 为list.get(0).get(0)
+        dp[0] = list.get(0).get(0);
+
+        // 状态转移：尝试从左上、正上走过来, 求出最小值
+        // 由于依赖左上和正上的值, 所以当前行需要从右往左进行转移
+        int preSize, curSize, cur;
+        for(int i = 1; i < n; i++) {
+            preSize = i;
+            curSize = i + 1;
+
+            for(int j = curSize - 1; j > -1; j--) {
+                cur = list.get(i).get(j);
+
+                // 同时存在左上和正上
+                if(j - 1 > -1 && j < preSize) {
+                    dp[j] = Math.min(dp[j - 1], dp[j]) + cur;
+                }
+                // 只存在左上
+                else if(j - 1 > -1) {
+                    dp[j] = dp[j - 1] + cur;
+                }
+                // 只存在正上
+                else {
+                    dp[j] = dp[j] + cur;
+                }
+            }
+        }
+
+        // 获取结果：对当前行即最后一行, 求最小值
+        int min = Integer.MAX_VALUE;
+        for(int j = 0; j < n; j++) {
+            min = Math.min(min, dp[j]);
+        }
+
+        return min;
+    }
+}
+```
+
+#### 121. 买卖股票的最佳时机 | 线性 dp | easy
+
+##### 1）贪心 + 极值法 | O（n）
+
+- **思路**：
+  1. 从左到右遍历，每次找到极小值则记录起来，用于与后面的股票价格相比，得出的最大利润则是答案。
+  2. 其中，如果遇到极小值是比之前的更小，此时算利润的话是为负数，肯定不是最大值，所以只更新掉替换之前极小值即可，无需计算利润。
+- **结论**：时间，2ms，88.95%，空间，51mb，90.14%，时间上，由于只需要遍历 1 次 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        if(prices == null || prices.length <= 1) {
+            return 0;
+        }
+
+        int max = 0, minPrice = prices[0];
+        for(int i = 1; i < prices.length; i++) {
+            if(prices[i] == minPrice) {
+                continue;
+            } else if(prices[i] < minPrice) {
+                minPrice = prices[i];
+            } else {
+                max = Math.max(max, prices[i] - minPrice);
+            }
+        }
+
+        return max;
+    }
+}
+```
+
+##### 2）线性 dp | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，4 ms，25.59%，空间，50.1 mb，98.91%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于使用了一张 2 * n 长的二维表，所以额外空间复杂度为 O（2 * n）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：dp[i][j]表示, 第j天进行i类型操作, 能得到的最大收入
+        // 其中, i=1表示买入, i=0表示卖出
+        int[][] dp = new int[2][n]; 
+
+        // 初始化状态：dp[1][n-1]表示最后一天买入, dp[0][n-1]表示最后一天卖出
+        dp[0][n - 1] = prices[n - 1];
+
+        // 状态转移：第i天时, 买入={当天买入, 以后买入}, 卖出={当天卖出, 以后卖出}
+        // 从右往左进行状态转移
+        for(int i = n - 2; i > -1; i--) {
+            // 买入
+            dp[1][i] = Math.max(
+                // 当天买入, 以后卖出
+                -prices[i] + dp[0][i + 1],
+                // 以后买入
+                dp[1][i + 1]
+            );
+
+            // 卖出
+            dp[0][i] = Math.max(
+                // 当天卖出, 终止交易
+                prices[i],
+                // 以后卖出
+                dp[0][i + 1]
+            );
+        }
+
+        // 获取结果：dp[1][0]表示, 第0天时买入, 得到的最大收入
+        return dp[1][0];
+    }
+}
+```
+
+##### 3）线性 dp + 空间压缩 | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，2 ms，57.52%，空间，57.3 mb，68.41%，时间上，由于状态转移只需要遍历 1 次 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：
+        // 1）buy表示, 买入能得到的收入
+        // 2）sell表示, 卖出能得到的收入, 如果此前没有买入, 则认为是当天买入+卖出=0
+        int buy, sell;
+
+        // 初始化状态：第0天时, buy=-prices[0], sell=0
+        buy = -prices[0];
+        sell = 0;
+
+        // 状态转移：第i天时,
+        // 1）buy= max{当天买入的贷款, 以后再买入}
+        // 2）sell=max{上一次买入的贷款 + 今天卖出得到的收入, 以后再卖出}
+        for(int i = 1; i < n; i++) {
+            // buy叠加0表示：之前买卖0次, 今天尝试买入
+            buy = Math.max(-prices[i], buy);
+
+            // sell叠加buy表示：
+            // 1）之前买入, 今天尝试卖出
+            // 2）之前没买入, 今天尝试卖出 => 相当于max{今天买入+卖出=0, 今天买入+以后卖出}, 做max不影响结果
+            sell = Math.max(buy + prices[i], sell);
+        }
+
+        // 获取结果：最终sell表示, 卖出时得到的最大利润
+        return sell;
+    }
+}
+```
+
+#### 122. 买卖股票的最佳时机 II | 线性 dp | medium
+
+##### 1）贪心 + 极值法 | O（n）
+
+- **思路**：只要当天比前一天的价格要高，那么就买入前一天的股票，并在当前天卖出。
+- **局限**：这种做法对比现实，是拥有这超前的预知能力，买到了过去的股票，所以总能保持不亏，达到最大的利润。
+- **结论**：时间，1ms，82.25%，空间，41.3mb，40.60%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于只是用了额外的几个有限变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        if(prices == null || prices.length == 0) {
+            return 0;
+        }
+
+        int profit = 0;
+        for(int i = 1; i < prices.length; i++) {
+            if(prices[i] > prices[i - 1]) {
+                profit += prices[i] - prices[i - 1];
+            }
+        }
+
+        return profit;
+    }
+}
+```
+
+##### 2）线性 dp | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，2 ms，34.01%，空间，41.1 mb，87.81%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于使用了一张 2 * n 长的二维表，所以额外空间复杂度为 O（2 * n）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：dp[i][j]表示, 第j天进行i类型操作, 产生的最大收入
+        // 其中, i=1代表买, i=0代表卖
+        int[][] dp = new int[2][n];
+
+        // 初始化状态：dp[1][n-1]代表最后一天买, dp[0][n-1]代表最后一天卖
+        dp[0][n - 1] = prices[n - 1];
+         
+        // 状态转移：第j天时, 买入=max{当天买入, 以后买入}, 卖出=max{当天卖出, 以后卖出}
+        // 从右往左进行状态转移
+        for(int i = n - 2; i > -1; i--) {
+            // 买入
+            dp[1][i] = Math.max(
+                // 当天买入
+                -prices[i] + dp[0][i + 1],
+                // 以后买入
+                dp[1][i + 1]
+            );
+
+            // 卖出
+            dp[0][i] = Math.max(
+                // 当天卖出
+                prices[i] + dp[1][i + 1],
+                // 以后卖出
+                dp[0][i + 1]
+            );
+        }
+
+        // 获取结果：dp[1][0]表示, 第0天进行买入能够得到的最大收入
+        return dp[1][0];
+    }
+}
+```
+
+##### 3）线性 dp + 空间压缩 | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，2 ms，34.01%，空间，41.2 mb，76.56%，时间上，由于状态转移只需要遍历 1 次 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：
+        // 1）buy表示, 买入能得到的收入
+        // 2）sell表示, 卖出能得到的收入, 如果此前没有买入, 则认为是当天买入+卖出=0
+        int buy, sell;
+
+        // 初始化状态：第0天时, buy=-prices[0], sell=0
+        buy = -prices[0];
+        sell = 0;
+
+        // 状态转移：第i天时,
+        // 1）buy= max{之前买卖的利润 + 当天买入的贷款, 以后再买入}
+        // 2）sell=max{之前买卖的利润 + 上一次买入的贷款 + 今天卖出得到的收入, 以后再卖出}
+        for(int i = 1; i < n; i++) {
+            // buy叠加sell表示：
+            // 1）之前买卖0次, 今天尝试买入
+            // 2）之前买卖1次, 今天尝试买入 => 相当于max{之前买卖+今天买入, 之前买卖+以后买入}, 做max不影响结果 
+            buy = Math.max(sell - prices[i], buy);
+
+            // sell叠加buy表示：
+            // 1）之前买入, 今天尝试卖出
+            // 2）之前没买入, 今天尝试卖出 => 相当于max{今天买入+卖出=0, 今天买入+以后卖出}, 做max不影响结果
+            sell = Math.max(buy + prices[i], sell);
+        }
+
+        // 获取结果：最终sell表示, 卖出时得到的最大利润
+        return sell;
+    }
+}
+```
+
+#### 123. 买卖股票的最佳时机 III | 线性 dp | hard
+
+##### 1）线性 dp | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，4 ms，64.54%，空间，55.3 mb，58.82%，时间上，由于状态转移只需要遍历一次 n，所以时间复杂度为 O（n），空间上，由于使用了一张 2 * 2 * n 的三维表，所以时间复杂度为 O（4 * n）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：dp[i][j][k]表示, 在第k天进行第i次j类型操作, 产生的最大收入
+        // 其中, i=0代表第1次, i=1代表第2次, j=1代表买, j=0代表卖
+        int[][][] dp = new int[2][2][n];
+
+        // 初始化状态：
+        // dp[0][0]代表第1次卖、dp[0][1]代表第1次买、dp[1][0]代表第2次卖、dp[1][1]代表第2次买
+        // dp[0][0][n-1]代表最后一天进行第1次卖、dp[0][1][n-1]代表最后一天进行第1次买
+        // dp[1][0][n-1]代表最后一天进行第2次卖、dp[1][1][n-1]代表最后一天进行第2次买
+        dp[0][0][n - 1] = dp[1][0][n - 1] = prices[n - 1];
+
+        // 状态转移：第k天时, 进行第1次买、第2次买、第1次卖、第2次卖
+        // 从下到上进行状态转移
+        for(int k = n - 2; k > -1; k--) {
+            // 第1次买入
+            dp[0][1][k] = Math.max(
+                // 当天买入, 以后第1次卖出
+                -prices[k] + dp[0][0][k + 1],
+                // 以后第1次买入
+                dp[0][1][k + 1]
+            );
+
+            // 第2次买入
+            dp[1][1][k] = Math.max(
+                // 当天买入, 以后第2次卖出
+                -prices[k] + dp[1][0][k + 1],
+                // 以后第2次买入
+                dp[1][1][k + 1]
+            );
+
+            // 第1次卖出
+            dp[0][0][k] = Math.max(
+                // 当天卖出, 以后第2次买入
+                prices[k] + dp[1][1][k + 1],
+                // 以后第1次卖出
+                dp[0][0][k + 1]
+            );
+
+            // 第2次卖出
+            dp[1][0][k] = Math.max(
+                // 当天卖出, 以后不能交易了
+                prices[k],
+                // 以后第2次卖出
+                dp[1][0][k + 1]
+            );
+        }
+
+        // 获取结果：dp[0][1][0]代表, 在第0天进行第1次买入操作, 产生的最大收入
+        return dp[0][1][0];
+    }
+}
+```
+
+##### 2）线性 dp + 空间压缩 | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，1 ms，100%，空间，57.5 mb，33.59%，时间上，由于状态转移只需要遍历 1 次 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：
+        // 1) buy1 表示, 第1次买入能得到的收入
+        // 2) sell1表示, 第1次卖出能得到的收入, 如果此前没有买入, 则认为是当天买入+卖出=0
+        // 3) buy2 表示, 第2次买入能得到的收入, 如果此前没有第1次, 则认为是当天买入+卖出+买入
+        // 4) sell2表示, 第2次卖出能得到的收入, 如果此前没有第1次, 则认为是当天买入+卖出+买入+卖出=0
+        int buy1, sell1, buy2, sell2;
+
+        // 初始化状态：第0天时, buy1=buy2=-prices[0], sell1=sell2=0
+        buy1 = buy2 = -prices[0];
+        sell1 = sell2 = 0;
+
+        // 状态转移：第i天时,
+        // 1）buy1= max{当天买入的贷款, 以后再买入}
+        // 2）sell1=max{之前买入的贷款 + 当天卖出得到的收入, 以后再卖出}
+        // 3）buy2= max{之前买卖的利润 + 当天买入的贷款, 以后再买入}
+        // 4）sell2=max{之前买卖的利润 + 上一次买入的贷款 + 当天卖出得到的收入, 以后再卖出}
+        for(int i = 1; i < n; i++) {
+            // buy1叠加0表示：之前买卖0次, 今天尝试买入
+            buy1 = Math.max(-prices[i], buy1);
+
+            // sell1叠加buy1表示：
+            // 1）之前买入, 今天尝试卖出
+            // 2）之前没买入, 今天尝试卖出 => 相当于max{今天买入+卖出=0, 今天买入+以后卖出}, 做max不影响结果
+            sell1 = Math.max(buy1 + prices[i], sell1);
+
+            // buy2叠加sell2表示：
+            // 1）之前买卖1次, 今天尝试买入
+            // 2）之前买卖0次, 今天尝试买入 => 相当于max{之前买卖+今天买入, 之前买卖+以后买入}, 做max不影响结果 
+            buy2 = Math.max(sell1 - prices[i], buy2);
+
+            // sell2叠加buy2表示：
+            // 1）之前买卖+买入, 今天尝试卖出
+            // 2）之前买卖+没买入, 今天尝试卖出 => 相当于max{之前买卖+今天买入+卖出=0, 之前买卖+今天买入+以后卖出}, 做max不影响结果
+            sell2 = Math.max(buy2 + prices[i], sell2);
+        }
+
+        // 获取结果：取卖1次和卖2次的最大值, 但由于如果卖1次能达到最大, 那么卖2次也可以达到最大(相当于出现一次当天买+卖的情况), 所以直接取卖2次的值即可
+        return sell2;
+    }
+}
+```
+
+#### 188. 买卖股票的最佳时机 IV | 线性 dp | hard
+
+##### 1）线性 dp | O（in + n * in）
+
+- **思路**：见代码注释。
+- **结论**：时间，1 ms，99.30%，空间，41.4 mb，29.42%，时间上，由于初始化状态花费 O（in），状态转移花费 O（n * in），所以整体时间复杂度为 O（in + n * in），空间上，由于使用了一张 in * 2 * n 的三维表，所以额外空间复杂度为 O（in * 2 * n）。
+
+```java
+class Solution {
+    public int maxProfit(int in, int[] prices) {
+        int n = prices.length;
+        if(in == 0 || n == 0) {
+            return 0;
+        }
+
+        // 定义状态：dp[i][j][k]表示, 在第k天进行第i次j类型操作, 产生的最大收入
+        // 其中, i=0代表第1次, i=1代表第2次, j=1代表买, j=0代表卖
+        int[][][] dp = new int[in][2][n];
+
+        // 初始化状态：
+        // dp[0][0]代表第1次卖、dp[0][1]代表第1次买、dp[in-1][0]代表最后一次卖、dp[n-1][1]代表最后一次买
+        // dp[i][0][n-1]代表最后一天进行第i次卖
+        for(int i = 0; i < in; i++) {
+            dp[i][0][n - 1] = prices[n - 1];
+        }
+        
+        // 状态转移：第k天时, 进行第i次买、第i次买
+        // 从下到上进行状态转移
+        for(int k = n - 2; k > -1; k--) {
+            // 从右到左进行状态转移
+            for(int i = 0; i < in; i++) {
+                // 第i次买入
+                dp[i][1][k] = Math.max(
+                    // 当天买入, 以后第i次卖出
+                    -prices[k] + dp[i][0][k + 1],
+                    // 以后第i次买入
+                    dp[i][1][k + 1]
+                );
+
+                // 第i次卖出
+                dp[i][0][k] = Math.max(
+                    // 当天卖出, 以后第i+1次买入
+                    prices[k] + (i + 1 < in? dp[i + 1][1][k + 1] : 0),
+                    // 以后第i次卖出
+                    dp[i][0][k + 1]
+                );
+            }
+        }
+
+        // 获取结果：dp[0][1][0]代表, 在第0天进行第1次买入操作, 产生的最大收入
+        return dp[0][1][0];
+    }
+}
+```
+
+##### 2）线性 dp + 空间压缩 | O（in + n * in）
+
+- **思路**：见代码注释。
+- **结论**：时间，1 ms，99.30%，空间，39.6 mb，78.36%，时间上，由于初始化状态花费 O（in），状态转移花费 O（n * in），所以整体时间复杂度为 O（in + n * in），空间上，由于使用了 2 张 in 的数组，所以额外空间复杂度为 O（2 * in）。
+
+```java
+class Solution {
+    public int maxProfit(int in, int[] prices) {
+        int n = prices.length;
+        if(in == 0 || n == 0) {
+            return 0;
+        }
+        
+        // 定义状态：
+        // 1) buys[i] 表示, 第i次买入能得到的收入, 如果第i-1次为0, 则认为现在是当天买入+卖出+买入
+        // 2) sells[i]表示, 第i次卖出能得到的收入, 如果第i-1次为0, 则认为现在是当天买入+卖出+买入+卖出=0
+        int[] buys = new int[in], sells = new int[in];
+
+        // 初始化状态：第0天时, buys[i]=-prices[0], sells[i]=0
+        for(int i = 0; i < in; i++) {
+            buys[i] = -prices[0];
+        }
+
+        // 状态转移：第j天时,
+        // 1）buy[i]= max{之前买卖的利润 + 当天买入的贷款, 以后再买入}
+        // 2）sell[i]=max{之前买卖的利润 + 上一次买入的贷款 + 当天卖出得到的收入, 以后再卖出}
+        for(int j = 1; j < n; j++) {
+            // 第1次买入卖出
+            // buys[0]叠加0表示：之前买卖0次, 今天尝试买入
+            buys[0] = Math.max(-prices[j], buys[0]);
+
+            // sell[0]叠加buy[0]表示：
+            // 1）之前买入, 今天尝试卖出
+            // 2）之前没买入, 今天尝试卖出 => 相当于max{今天买入+卖出=0, 今天买入+以后卖出}, 做max不影响结果
+            sells[0] = Math.max(buys[0] + prices[j], sells[0]);
+
+            // 第2~n次买入卖出
+            for(int i = 1; i < in; i++) {
+                // buy[i]叠加sell[i - 1]表示：
+                // 1）之前买卖1次, 今天尝试买入
+                // 2）之前买卖0次, 今天尝试买入 => 相当于max{之前买卖+今天买入, 之前买卖+以后买入}, 做max不影响结果 
+                buys[i] = Math.max(sells[i - 1] - prices[j], buys[i]);
+
+                // sell[i]叠加buy[i]表示：
+                // 1）之前买卖+买入, 今天尝试卖出
+                // 2）之前买卖+没买入, 今天尝试卖出 => 相当于max{之前买卖+今天买入+卖出=0, 之前买卖+今天买入+以后卖出}, 做max不影响结果
+                sells[i] = Math.max(buys[i] + prices[j], sells[i]);
+            }
+        }
+
+        // 获取结果：由于如果卖i-1次能达到最大, 那么卖i次也可以达到最大(相当于出现一次当天买+卖的情况), 所以直接取卖i次的值即可
+        return sells[in - 1];
+    }
+}
+```
+
+#### 309. 最佳买卖股票时机含冷冻期 | 线性 dp | medium
+
+##### 1）线性 dp | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，0 ms，100.01%，空间，40 mb，15.45%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于使用了一张 2 * n 长的二维表，所以额外空间复杂度为 O（2 * n）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+        if(n == 1) {
+            return 0;
+        }
+
+        // 定义状态：dp[i][j]表示, 第j天时进行i类型操作, 能得到的最大收入
+        // 其中, i=1表示买入操作, i=0表示卖出操作
+        int[][] dp = new int[2][n];
+
+        // 初始化状态：
+        // 1）dp[1][n-1]表示最后一天买入, dp[0][n-1]表示最后一天卖出
+        // 2）dp[1][n-2]表示倒数第二天买入, dp[0][n-2]表示倒数第二天卖出, 
+        dp[0][n - 1] = prices[n - 1];
+        dp[1][n - 2] = Math.max(0, -prices[n - 2] + dp[0][n - 1]);
+        dp[0][n - 2] = Math.max(prices[n - 2], dp[0][n - 1]);
+
+        // 状态转移：第i天时, 买入={当天买入, 以后买入}, 卖出={当天卖出, 以后卖出}
+        // 从右往左进行状态转移
+        for(int i = n - 3; i > -1; i--) {
+            // 买入
+            dp[1][i] = Math.max(
+                // 当天买入, 以后卖出 
+                -prices[i] + dp[0][i + 1],
+                // 以后买入
+                dp[1][i + 1]
+            );
+
+            // 卖出
+            dp[0][i] = Math.max(
+                // 当天卖出, 后天或以后买入
+                prices[i] + dp[1][i + 2],
+                // 以后卖出
+                dp[0][i + 1]
+            );
+        }
+
+        // 获取结果：dp[1][0]表示, 第0天时买入, 得到的最大收入
+        return dp[1][0];
+    }
+}
+```
+
+##### 2）线性 dp + 空间压缩 | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，1 ms，100%，空间，57.5 mb，33.59%，时间上，由于状态转移只需要遍历 1 次 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices) {
+        int n = prices.length;
+
+        // 定义状态：
+        // 1）buy表示, 买入能得到的收入
+        // 2）sell表示, 卖出能得到的收入, 如果此前没有买入, 则认为是当天买入+卖出=0
+        // 3）unlock表示, 非冷冻期, 只有此时才能买入, 出现卖出后, unlock=卖出前的收入
+        int buy, sell, unlock;
+
+        // 初始化状态：第0天时, buy=-prices[0], sell=0, unlock=0
+        buy = -prices[0];
+        sell = unlock = 0;
+
+        // 状态转移：第i天时, 
+        // 1）buy= max{上次没卖出时的利润 +  + 当天买入的贷款, 以后再买入}
+        // 2）sell=max{之前买卖的利润 + 上一次买入的贷款 + 今天卖出得到的收入, 以后再卖出}
+        for(int i = 1; i < n; i++) {
+            // buy叠加unlock表示：非冷冻期中买入股票, 能得到的最大收入
+            buy = Math.max(unlock - prices[i], buy);
+
+            // 由于当天可能卖出, 所以先备份下卖出前的利润, 以便用于后面分析, 由于现在没卖出, 导致后面买入的利润
+            unlock = sell;
+
+            // sell叠加buy表示：
+            // 1）之前买入, 今天尝试卖出
+            // 2）之前没买入, 今天尝试卖出 => 相当于max{今天买入+卖出=0, 今天买入+以后卖出}, 做max不影响结果
+            sell = Math.max(buy + prices[i], sell);
+        }
+
+        // 获取结果：
+        // 1）如果unlock是n-1被赋值, 说明n-1发生过卖出, 由于能卖则卖, 后面又没有价格影响, 所以肯定是sell大
+        // 2）如果unlock是n-2被赋值, 说明n-2发生过卖出, 此时有可能n-2大于n-1的利润, 但由于n-1轮sell#max判断, 对n-2不卖的情况做了结算赋值给了sell, 所以最后sell肯定也是最大的
+        // 因此, 直接返回sell即可, 不用比较unlock和sell的最大值
+        return sell;
+    }
+}
+```
+
+#### 714. 买卖股票的最佳时机含手续费 | 线性 dp | medium
+
+##### 1）线性 dp | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，8 ms，51.90%，空间，48.7 mb，86.40%，时间上，由于只需要遍历一次数组，所以时间复杂度为 O（n），空间上，由于使用了一张 2 * n 长的二维表，所以额外空间复杂度为 O（2 * n）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices, int fee) {
+        int n = prices.length;
+
+        // 定义状态：dp[i][j]表示, 第j天进行i类型操作, 产生的最大收入
+        // 其中, i=1代表买, i=0代表卖
+        int[][] dp = new int[2][n];
+
+        // 初始化状态：dp[1][n-1]代表最后一天买, dp[0][n-1]代表最后一天卖, 但要扣去手续费
+        dp[0][n - 1] = prices[n - 1] - fee;
+         
+        // 状态转移：第j天时, 买入=max{当天买入, 以后买入}, 卖出=max{当天卖出, 以后卖出}
+        // 从右往左进行状态转移
+        for(int i = n - 2; i > -1; i--) {
+            // 买入
+            dp[1][i] = Math.max(
+                // 当天买入
+                -prices[i] + dp[0][i + 1],
+                // 以后买入
+                dp[1][i + 1]
+            );
+
+            // 卖出
+            dp[0][i] = Math.max(
+                // 当天卖出, 但要扣取手续费
+                prices[i] - fee + dp[1][i + 1],
+                // 以后卖出
+                dp[0][i + 1]
+            );
+        }
+
+        // 获取结果：dp[1][0]表示, 第0天进行买入能够得到的最大收入
+        return dp[1][0];
+    }
+}
+```
+
+##### 2）线性 dp + 空间压缩 | O（n）
+
+- **思路**：见代码注释。
+- **结论**：时间，4 ms，87.00%，空间，49.8 mb，20.11%，时间上，由于状态转移只需要遍历 1 次 n，所以时间复杂度为 O（n），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public int maxProfit(int[] prices, int fee) {
+        int n = prices.length;
+
+        // 定义状态：
+        // 1）buy表示, 买入能得到的收入
+        // 2）sell表示, 卖出能得到的收入, 如果此前没有买入, 则认为是当天买入+卖出=0
+        int buy, sell;
+
+        // 初始化状态：第0天时, buy=-prices[0], sell=0, 第一天没做任何卖出, 所以没有收入也不用扣手续费
+        buy = -prices[0];
+        sell = 0;
+
+        // 状态转移：第i天时,
+        // 1）buy= max{之前买卖的利润 + 当天买入的贷款, 以后再买入}
+        // 2）sell=max{之前买卖的利润 + 上一次买入的贷款 + 今天卖出得到的收入 - 手续费, 以后再卖出}
+        for(int i = 1; i < n; i++) {
+            // buy叠加sell表示：
+            // 1）之前买卖0次, 今天尝试买入
+            // 2）之前买卖1次, 今天尝试买入 => 相当于max{之前买卖+今天买入, 之前买卖+以后买入}, 做max不影响结果 
+            buy = Math.max(sell - prices[i], buy);
+
+            // sell叠加buy表示：
+            // 1）之前买入, 今天尝试卖出
+            // 2）之前没买入, 今天尝试卖出 => 相当于max{今天买入+卖出=0, 今天买入+以后卖出}, 做max不影响结果
+            sell = Math.max(buy + prices[i] - fee, sell);
+        }
+
+        // 获取结果：最终sell表示, 卖出时得到的最大利润
+        return sell;
     }
 }
 ```
@@ -23717,289 +24865,6 @@ class Solution {
             ends[resi] = value;
             return resi + 1;
         }
-    }
-}
-```
-
-#### 309. 最佳买卖股票时机含冷冻期 | 线性 dp| medium
-
-##### 1）暴力递归1 | >= O（n^3）
-
-- **思路**：
-  1. 设计一个 f（start，cur）函数，代表从 start 开始买入可获得的最大利润。
-  2. 主函数通过模拟买卖股票的操作，先尝试从 0,1,2,...,n-1 调用递归函数开始买入，求获得利润的最大值返回即是答案。
-  3. 然后 f 函数也是通过模拟买卖股票的操作来实现的，先尝试在 start+1,start+2,...n-1 开始卖出、结算或者再枚举到冻结期之后的第 1,2,...,n-1 天又买入...，来计算当前 f（start，cur）的最大利润。
-- **结论**：执行超时，时间上，由于枚举了买入、卖出、冻结期之后买入三次，所以时间复杂度至少为 O（n^3），并且由于使用了 cur 作为递归参数，不好做记忆化搜索，所以下一个优化的方向就是把 cur 参数给去掉；空间上，额外空间复杂度取决于递归深度，为 O（n^3）。 
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }
-
-        // 开始尝试买入
-        int max = 0;
-        for(int i = 0; i < prices.length; i++) {
-            max = Math.max(max, f(prices, i, 0));
-        }
-
-        return max;
-    }
-
-    // f代表从start开始买入可获得的最大利润 
-    private int f(int[] prices, int start, int cur) {
-        if(start >= prices.length) {
-            return cur;
-        }
-
-        // 开始尝试卖出
-        int mai = prices[start], max = cur;
-        for(int i = start + 1; i < prices.length; i++) {
-            // 小于等于买入价, 则不用卖, 利润保持不变
-            if(prices[i] <= mai) {
-                continue;
-            }
-
-            // 如果冻结期过后还有得买, 则再尝试从冻结期后的第1,2,...m天买入
-            if(i + 2 < prices.length) {
-                for(int j = i + 2; j < prices.length; j++) {
-                    max = Math.max(max, f(prices, j, cur + prices[i] - mai));
-                }
-            } 
-            // 如果冻结期过后没有得买了, 则做最后的结算
-            else {
-                max = Math.max(max, f(prices, prices.length, cur + prices[i] - mai));
-            }
-        }
-
-        return max;
-    }
-}
-```
-
-##### 2）暴力递归2 | >= O（n^3）
-
-- **思路**：
-  1. 在暴力递归1的基础上，更改了 f（start）函数，代表从 start 开始买入可获得的最大收入，这时求利润 =  -成本 + 收入。
-  2. 主函数通过模拟买卖股票的操作，先尝试从 0,1,2,...,n-1 调用递归函数开始买入，求获得利润的最大值返回即是答案。
-  3. 然后 f 函数也是通过模拟买卖股票的操作来实现的，先尝试在 start+1,start+2,...n-1 开始卖出、结算或者再枚举到冻结期之后的第 1,2,...,n-1 天又买入...，来计算当前 f（star）的最大利润。
-- **结论**：执行超时，时间上，由于枚举了买入、卖出、冻结期之后买入三次，所以时间复杂度至少为 O（n^3），空间上，额外空间复杂度取决于递归深度，为 O（n^3）。 
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }
-
-        // 开始尝试买入
-        int max = 0;
-        for(int i = 0; i < prices.length; i++) {
-            max = Math.max(max, -prices[i] + f(prices, i));
-        }
-
-        return max;
-    }
-
-    // f代表从start开始买入可获得的最大收入, 其中利润 = -成本 + 收入
-    private int f(int[] prices, int start) {
-        if(start >= prices.length) {
-            return 0;
-        }
-
-        // 开始尝试卖出
-        int max = 0;
-        for(int i = start + 1; i < prices.length; i++) {
-            // 先尝试冻结期过后不买
-            max = Math.max(max, prices[i]);
-
-            // 如果冻结期过后还有得买, 则再尝试从冻结期后的第1,2,...m天买入
-            for(int j = i + 2; j < prices.length; j++) {
-                max = Math.max(max, prices[i] - prices[j] + f(prices, j));
-            }
-        }
-
-        return max;
-    }
-}
-```
-
-##### 3）记忆化搜索2 | O（n^3）
-
-- **思路**：在暴力递归2的基础上，增加了 dp 一维表缓存，如果缓存中存在则从缓存中获取，否则先设置结果到缓存中再返回，其中由于是前面的值依赖后面的值，所以主函数调用递归函数也优化成了从后往前调用。
-- **结论**：
-  1. 执行还是超时，不过测试用例又通过了 1 个，时间上，由于枚举了买入、卖出、冻结期之后买入三次，所以时间复杂度等于 O（n^3），空间上，额外空间复杂度取决于递归深度，为 O（n^3）。
-  2. 根据经验，记忆化搜索都超时了，那么严格表结构的优化也就没有必要进行了，因为那只是优化空间的使用而已，时间复杂度并没有改变，说明这个算法思路不符合题目要求，还是继续尝试其他思路吧~
-
-```java
-class Solution {
-
-    private int[] dp;
-
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }
-
-        dp = new int[prices.length];
-        Arrays.fill(dp, -1);
-
-        // 开始尝试买入
-        int max = 0;
-        for(int i = prices.length - 1; i > -1; i--) {
-            max = Math.max(max, -prices[i] + f(prices, i));
-        }
-  
-        return max;
-    }
-
-    // f代表从start开始买入可获得的最大收入, 其中利润 = -成本 + 收入
-    private int f(int[] prices, int start) {
-        if(dp[start] != -1) {
-            return dp[start];
-        }
-
-        // 开始尝试卖出
-        int max = 0;
-        for(int i = start + 1; i < prices.length; i++) {
-            // 先尝试冻结期过后不买
-            max = Math.max(max, prices[i]);
-
-            // 如果冻结期过后还有得买, 则再尝试从冻结期后的第1,2,...m天买入
-            for(int j = i + 2; j < prices.length; j++) {
-                max = Math.max(max, prices[i] - prices[j] + f(prices, j));
-            }
-        }
-
-        dp[start] = max;
-        return dp[start];
-    }
-}
-```
-
-##### 4）暴力递归3 | O（4n）
-
-- **思路**：
-  1. 由于暴力递归2 是一维参数，且即使优化成记忆化搜索还是超时，如果要减少时间复杂度，那么就需要升维优化算法思路，所以就有了暴力递归3~
-  2. 设计一个 f（day，status）函数，代表在 day 天时，如果状态为 status 能够得到的最大利润，其中，status=0 代表买入状态，status=1 代表卖出状态。
-  3. 而 f（day，status）函数的实现，可分为 3 种情况：
-     1. 如果 day 天数超过了给定数组的有效值时，则返回 0，代表无法计算更大的利润。
-     2. 否则 day 合法，同时如果 status=0，说明来到 day 当天已经为买入状态了，此时要么卖出（跳过冷冷冻期告诉下两个 day 当前已卖出，并结算此时的 price），要么保持不动（把当前状态已经买入告诉下一个 day 当前还是买入状态，不结算此时的 price）。
-     3. 但如果 status=1，说明来到 day 当天已经为卖出状态了，此时要么买入（当前为卖出状态，说明肯当前肯定不再冷冻期内，即可买入，所以扣减当前成本 - price，然后告诉下一个 day 当前已买入），要么保持不动（把当前状态已经买入告诉下一个 day 当前还是卖出状态，不扣减此时的成本）。
-  4. 最后，主函数通过调用递归函数，告诉第 0 天当前为已卖出状态，要么买入，要么不动，即可取得整个数组的最大利润。
-- **结论**：执行超时，时间上，由于递归函数调用 4 次，每次都需要遍历一遍数组，所以时间复杂度为 O（4n），空间上，额外空间复杂度取决于递归深度，为 O（4n）。
-
-```java
-class Solution {
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }  
-        return f(prices, 0, 1);
-    }
-
-    // f代表在day天时状态为status能得到的最大利润, status: {0: 买入, 1: 卖出}
-    private int f(int[] prices, int day, int status) {
-        if(day >= prices.length) {
-            return 0;
-        }
-
-        // 当前为买入状态, 可卖出或者保持不动
-        int max = 0;
-        if(status == 0) {
-            max = Math.max(prices[day] + f(prices, day+2, 1), f(prices, day+1, 0));
-        } 
-        // 当前为卖出状态, 可买入或者保持不动
-        else if(status == 1) {
-            max = Math.max(-prices[day] + f(prices, day+1, -1), f(prices, day+1, 1));
-        }
-
-        return max;
-    }
-}
-```
-
-##### 5）记忆化搜索3 | O（n）
-
-- **思路**：在暴力递归 3 的基础上，增加了 dp 二维表缓存，如果缓存中存在则从缓存中获取，否则先设置结果到缓存中再返回。
-- **结论**：时间，1ms，87%，空间，39.6mb，5.00%，时间上，把递归行为优化成了去缓存中取数，也就是暴力递归 3 中要遍历 4 次数组的行为，优化成了只需要遍历 1 次即可，所以时间复杂度为 O（n），空间上，由于使用了一张 dp 二维表，所以额外空间复杂度为 O（2n）。
-
-```java
-class Solution {
-
-    private int[][] dp;
-
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }
-
-        dp = new int[2][prices.length];
-        for(int i = 0; i < dp.length; i++) {
-            Arrays.fill(dp[i], -1);
-        }
-
-        return f(prices, 0, 1);
-    }
-
-    // f代表在day天时状态为status能得到的最大利润, status: {0: 买入, 1: 卖出}
-    private int f(int[] prices, int day, int status) {
-        if(day >= prices.length) {
-            return 0;
-        }
-        if(dp[status][day] != -1) {
-            return dp[status][day];
-        }
-
-        // 当前为买入状态, 可卖出或者保持不动
-        int max = 0;
-        if(status == 0) {
-            max = Math.max(prices[day] + f(prices, day+2, 1), f(prices, day+1, 0));
-        }
-        // 当前为卖出状态, 可买入或者保持不动
-        else if(status == 1) {
-            max = Math.max(-prices[day] + f(prices, day+1, 0), f(prices, day+1, 1));
-        }
-
-        dp[status][day] = max;
-        return dp[status][day];
-    }
-}
-```
-
-##### 6）严格表结构优化 | O（n）
-
-- **思路**：
-  1. 在记忆化搜索 3 的基础上，经过研究值依赖关系后得出，当前值依赖于后一个和后两个值，所以本题是一个从右往左初始化的模型。
-  2. 不过，需要先初始化好最后两个值，这可以通过脑补递归函数传入 n-1 和 n-2 参数时的行为，即可得出最后两个值。
-  3. 其中，如果保持像记忆化搜索 3 那样，使用列数为 n 的二维表的话，那么就错失了超过数组传长度时，结果为 0 的边界值，从而造成了执行错误，所以需要增加一列，使用 n+1 列 2 行的二维表作为 dp 数组，保证初始化好 n 列（全 0）和 n-1 列即可（脑补递归函数传入 n-1 参数时的行为，来模仿求出）。
-- **结论**：时间，0ms，100%，空间，39.6mb，5.00%，时间上，初始化好 dp 二维表，由于行状态只有两个值，可以在一次循环里分别填写，所以只需要遍历列数即可，因此时间复杂度为 O（n），空间上，由于使用了一张 n+1 列 2 行的二维表作为 dp 数组，所以额外空间复杂度为 O（2 * [n + 1]）。
-
-```java
-class Solution {
-    
-    public int maxProfit(int[] prices) {
-        if(prices == null || prices.length <= 1) {
-            return 0;
-        }
-
-        int n = prices.length;
-        int[][] dp = new int[2][n+1];
-        dp[0][n] = 0;
-        dp[1][n] = 0;
-        dp[0][n-1] = Math.max(prices[n-1], dp[0][n]);
-        dp[1][n-1] = Math.max(-prices[n-1] + dp[0][n], dp[1][n]);
-        
-        for(int day = n - 2; day > -1; day--) {
-            // 当前为买入状态, 可卖出或者保持不动
-            dp[0][day] = Math.max(prices[day] + dp[1][day+2], dp[0][day+1]);
-
-            // 当前为卖出状态, 可买入或者保持不动
-            dp[1][day] = Math.max(-prices[day] + dp[0][day+1], dp[1][day+1]);
-        }
-
-        return dp[1][0];
     }
 }
 ```
