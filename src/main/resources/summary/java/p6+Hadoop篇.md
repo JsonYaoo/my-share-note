@@ -56,22 +56,579 @@ Hadoop，是一个由 Apache 开发的分布式系统基础架构，充分利用
 
 ![1660391039404](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660391039404.png)
 
-其中，由于 MapReduce 是一个计算框架，所以不会在图中展示，只在运行时其相关进程才会创建。
+**安装部署步骤**：
 
-1. HDFS 默认端口 9870
-2. YARN 默认端口 8088
+##### 1、设置主机名称
+
+```shell
+# 临时设置，立即生效
+[root@bigdata01 ~]# hostname bigdata01
+# 永久设置，重启生效
+[root@bigdata01 ~]# vi /etc/hostname 
+bigdata01
+
+# 设置 dfs
+[root@bigdata01 ~]# vi /etc/hosts 
+192.168.182.100 bigdata01
+```
+
+##### 2、关闭防火墙
+
+```shell
+[root@bigdata01 ~]# systemctl stop firewalld
+[root@bigdata01 ~]# systemctl disable firewalld
+```
+
+##### 3、设置免密码登录
+
+```shell
+# 在~/.ssh目录下生成对应的公钥和私钥文件
+[root@bigdata01 ~]# ssh-keygen -t rsa
+Generating public/private rsa key pair.
+Enter file in which to save the key (/root/.ssh/id_rsa): 
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in /root/.ssh/id_rsa.
+Your public key has been saved in /root/.ssh/id_rsa.pub.
+The key fingerprint is:
+SHA256:I8J8RDun4bklmx9T45SRsKAu7FvP2HqtriYUqUqF1q4 root@bigdata01
+The key's randomart image is:
++---[RSA 2048]----+
+|      o .        |
+|     o o o .     |
+|  o.. = o o      |
+| +o* o *   o     |
+|..=.= B S =      |
+|.o.o o B = .     |
+|o.o . +.o .      |
+|.E.o.=...o       |
+|  .o+=*..        |
++----[SHA256]-----+
+[root@bigdata01 ~]# ll ~/.ssh/
+total 12
+-rw-------. 1 root root 1679 Apr  7 16:39 id_rsa
+-rw-r--r--. 1 root root  396 Apr  7 16:39 id_rsa.pub
+
+# 把公钥拷贝到需要免密码登录的机器上面
+[root@bigdata01 ~]# cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+
+# 免密码登录
+[root@bigdata01 ~]# ssh bigdata01
+Last login: Tue Apr  7 15:05:55 2020 from 192.168.182.1
+```
+
+##### 4、安装 JDK
+
+```shell
+# 上传、解压
+[root@bigdata01 soft]# tar -zxvf jdk-8u202-linux-x64.tar.gz
+
+# 重命名
+[root@bigdata01 soft]# mv jdk1.8.0_202 jdk1.8
+
+# 配置环境变量
+[root@bigdata01 soft]# vi /etc/profile
+.....
+export JAVA_HOME=/data/soft/jdk1.8
+export PATH=.:$JAVA_HOME/bin:$PATH
+
+# 验证环境
+[root@bigdata01 soft]# source /etc/profile
+[root@bigdata01 soft]# java -version          
+java version "1.8.0_202"
+Java(TM) SE Runtime Environment (build 1.8.0_202-b08)
+Java HotSpot(TM) 64-Bit Server VM (build 25.202-b08, mixed mode)
+```
+
+##### 5、解压 Hadoop
+
+```shell
+# 上传、解压
+[root@bigdata01 soft]# tar -zxvf hadoop-3.2.0.tar.gz
+
+# 设置环境变量
+[root@bigdata01 hadoop-3.2.0]# vi /etc/profile
+.......
+export JAVA_HOME=/data/soft/jdk1.8
+export HADOOP_HOME=/data/soft/hadoop-3.2.0
+export PATH=.:$JAVA_HOME/bin:$HADOOP_HOME/sbin:$HADOOP_HOME/bin:$PATH
+[root@bigdata01 hadoop-3.2.0]# source /etc/profile
+```
+
+##### 6、修改配置文件
+
+```shell
+[root@bigdata01 hadoop-3.2.0]# cd etc/hadoop/
+[root@bigdata01 hadoop]# 
+
+# 1、修改hadoop-env.sh文件，增加环境变量信息，添加到hadoop-env.sh文件末尾即可
+[root@bigdata01 hadoop]# vi hadoop-env.sh
+.......
+export JAVA_HOME=/data/soft/jdk1.8
+export HADOOP_LOG_DIR=/data/hadoop_repo/logs/hadoop
+
+# 2、修改 core-site.xml 文件
+[root@bigdata01 hadoop]# vi core-site.xml
+<configuration>
+    <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://bigdata01:9000</value>
+    </property>
+    <property>
+        <name>hadoop.tmp.dir</name>
+        <value>/data/hadoop_repo</value>
+   </property>
+</configuration>
+
+# 3、修改hdfs-site.xml文件，把hdfs中文件副本的数量设置为1，因为现在伪分布集群只有一个节点
+[root@bigdata01 hadoop]# vi hdfs-site.xml
+<configuration>
+    <property>
+        <name>dfs.replication</name>
+        <value>1</value>
+    </property>
+</configuration>
+
+# 4、修改mapred-site.xml，设置mapreduce使用的资源调度框架
+[root@bigdata01 hadoop]# vi mapred-site.xml
+<configuration>
+    <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+    </property>
+</configuration>
+
+# 5、修改yarn-site.xml，设置yarn上支持运行的服务和环境变量白名单
+[root@bigdata01 hadoop]# vi yarn-site.xml
+<configuration>
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.env-whitelist</name>
+ <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
+    </property>
+</configuration>
+
+# 6、修改workers，设置集群中从节点的主机名信息，在这里就一台集群，所以就填写bigdata01即可
+[root@bigdata01 hadoop]# vi workers
+bigdata01
+```
+
+##### 7、格式化 HDFS
+
+```shell
+[root@bigdata01 hadoop]# cd /data/soft/hadoop-3.2.0
+[root@bigdata01 hadoop-3.2.0]# bin/hdfs namenode -format
+WARNING: /data/hadoop_repo/logs/hadoop does not exist. Creating.
+2020-04-07 17:45:22,086 INFO namenode.NameNode: STARTUP_MSG: 
+...
+2020-04-07 17:45:24,689 INFO common.Storage: Storage directory /data/hadoop_repo/dfs/name has been successfully formatted.
+...
+```
+
+##### 8、修改启动脚本
+
+```shell
+# 修改sbin目录下的start-dfs.sh，stop-dfs.sh这两个脚本文件，在文件前面增加如下内容
+[root@bigdata01 hadoop-3.2.0]# cd sbin/
+[root@bigdata01 sbin]# vi start-dfs.sh
+HDFS_DATANODE_USER=root
+HDFS_DATANODE_SECURE_USER=hdfs
+HDFS_NAMENODE_USER=root
+HDFS_SECONDARYNAMENODE_USER=root
+[root@bigdata01 sbin]# vi stop-dfs.sh
+HDFS_DATANODE_USER=root
+HDFS_DATANODE_SECURE_USER=hdfs
+HDFS_NAMENODE_USER=root
+HDFS_SECONDARYNAMENODE_USER=root
+
+# 修改sbin目录下的start-yarn.sh，stop-yarn.sh这两个脚本文件，在文件前面增加如下内容
+[root@bigdata01 sbin]# vi start-yarn.sh
+YARN_RESOURCEMANAGER_USER=root
+HADOOP_SECURE_DN_USER=yarn
+YARN_NODEMANAGER_USER=root
+[root@bigdata01 sbin]# vi stop-yarn.sh
+YARN_RESOURCEMANAGER_USER=root
+HADOOP_SECURE_DN_USER=yarn
+YARN_NODEMANAGER_USER=root
+```
+
+##### 9、启动集群
+
+```shell
+[root@bigdata01 sbin]# cd /data/soft/hadoop-3.2.0
+[root@bigdata01 hadoop-3.2.0]# sbin/start-all.sh 
+Starting namenodes on [bigdata01]
+Last login: Tue Apr  7 16:45:28 CST 2020 from fe80::c8a8:4edb:db7b:af53%ens33 on pts/1
+Starting datanodes
+Last login: Tue Apr  7 17:59:21 CST 2020 on pts/0
+Starting secondary namenodes [bigdata01]
+Last login: Tue Apr  7 17:59:23 CST 2020 on pts/0
+Starting resourcemanager
+Last login: Tue Apr  7 17:59:30 CST 2020 on pts/0
+Starting nodemanagers
+Last login: Tue Apr  7 17:59:37 CST 2020 on pts/0
+
+# 验证环境，其中，由于 MapReduce 是一个计算框架，所以不会在图中展示，只在运行时其相关进程才会创建。
+[root@bigdata01 hadoop-3.2.0]# jps
+3267 NameNode
+3859 ResourceManager
+3397 DataNode
+3623 SecondaryNameNode
+3996 NodeManager
+4319 Jps
+
+# web界面
+# HDFS webui界面：http://192.168.182.100:9870
+# YARN webui界面：http://192.168.182.100:8088
+```
+
+##### 10、启动 History Server
+
+```shell
+[root@bigdata01 hadoop-3.2.0]# mapred --daemon start historyserver
+```
+
+##### 11、停止集群
+
+```shell
+[root@bigdata01 hadoop-3.2.0]# sbin/stop-all.sh 
+Stopping namenodes on [bigdata01]
+Last login: Tue Apr  7 17:59:40 CST 2020 on pts/0
+Stopping datanodes
+Last login: Tue Apr  7 18:06:09 CST 2020 on pts/0
+Stopping secondary namenodes [bigdata01]
+Last login: Tue Apr  7 18:06:10 CST 2020 on pts/0
+Stopping nodemanagers
+Last login: Tue Apr  7 18:06:13 CST 2020 on pts/0
+Stopping resourcemanager
+Last login: Tue Apr  7 18:06:16 CST 2020 on pts/0
+```
 
 #### 2）分布式集群
 
 ![1660394757523](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660394757523.png)
 
+##### 1、设置主机名称
+
+每台机器都要
+
+```shell
+# 临时设置，立即生效
+[root@bigdata01 ~]# hostname bigdata01
+# 永久设置，重启生效
+[root@bigdata01 ~]# vi /etc/hostname 
+bigdata01
+
+# 设置 dfs
+[root@bigdata02 ~]# vi /etc/hosts
+192.168.182.100 bigdata01
+192.168.182.101 bigdata02
+192.168.182.102 bigdata03
+```
+
+##### 2、关闭防火墙
+
+每台机器都要
+
+```shell
+[root@bigdata01 ~]# systemctl stop firewalld
+[root@bigdata01 ~]# systemctl disable firewalld
+```
+
+##### 3、设置免密码登录
+
+每台机器都要
+
+```shell
+# 在~/.ssh目录下生成对应的公钥和私钥文件
+[root@bigdata01 ~]# ssh-keygen -t rsa
+Generating public/private rsa key pair.
+Enter file in which to save the key (/root/.ssh/id_rsa): 
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in /root/.ssh/id_rsa.
+Your public key has been saved in /root/.ssh/id_rsa.pub.
+The key fingerprint is:
+SHA256:I8J8RDun4bklmx9T45SRsKAu7FvP2HqtriYUqUqF1q4 root@bigdata01
+The key's randomart image is:
++---[RSA 2048]----+
+|      o .        |
+|     o o o .     |
+|  o.. = o o      |
+| +o* o *   o     |
+|..=.= B S =      |
+|.o.o o B = .     |
+|o.o . +.o .      |
+|.E.o.=...o       |
+|  .o+=*..        |
++----[SHA256]-----+
+[root@bigdata01 ~]# ll ~/.ssh/
+total 12
+-rw-------. 1 root root 1679 Apr  7 16:39 id_rsa
+-rw-r--r--. 1 root root  396 Apr  7 16:39 id_rsa.pub
+
+# 把公钥拷贝到需要免密码登录的机器上面
+[root@bigdata01 ~]# cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+
+# 免密码登录
+[root@bigdata01 ~]# ssh bigdata01
+Last login: Tue Apr  7 15:05:55 2020 from 192.168.182.1
+```
+
+##### 4、同步时钟
+
+每台机器都要
+
+```shell
+# 安装
+[root@bigdata01 ~]# yum install -y ntpdate
+
+# 同步
+[root@bigdata01 ~]# ntpdate -u ntp.sjtu.edu.cn
+-bash: ntpdate: command not found
+
+# 定时同步
+[root@bigdata01 ~]# vi /etc/crontab
+* * * * * root /usr/sbin/ntpdate -u ntp.sjtu.edu.cn
+```
+
+##### 5、安装 JDK
+
+每台机器都要
+
+```shell
+# 上传、解压
+[root@bigdata01 soft]# tar -zxvf jdk-8u202-linux-x64.tar.gz
+
+# 重命名
+[root@bigdata01 soft]# mv jdk1.8.0_202 jdk1.8
+
+# 配置环境变量
+[root@bigdata01 soft]# vi /etc/profile
+.....
+export JAVA_HOME=/data/soft/jdk1.8
+export PATH=.:$JAVA_HOME/bin:$PATH
+
+# 验证环境
+[root@bigdata01 soft]# source /etc/profile
+[root@bigdata01 soft]# java -version          
+java version "1.8.0_202"
+Java(TM) SE Runtime Environment (build 1.8.0_202-b08)
+Java HotSpot(TM) 64-Bit Server VM (build 25.202-b08, mixed mode)
+```
+
+##### 6、解压 Hadoop
+
+只修改一台，修改完成后，scp 到其他节点即可
+
+```shell
+# 上传、解压
+[root@bigdata01 soft]# tar -zxvf hadoop-3.2.0.tar.gz
+
+# 设置环境变量
+[root@bigdata01 hadoop-3.2.0]# vi /etc/profile
+.......
+export JAVA_HOME=/data/soft/jdk1.8
+export HADOOP_HOME=/data/soft/hadoop-3.2.0
+export PATH=.:$JAVA_HOME/bin:$HADOOP_HOME/sbin:$HADOOP_HOME/bin:$PATH
+[root@bigdata01 hadoop-3.2.0]# source /etc/profile
+```
+
+##### 7、修改配置文件
+
+只修改一台，修改完成后，scp 到其他节点即可
+
+```shell
+# 进入目录
+[root@bigdata01 soft]# cd hadoop-3.2.0/etc/hadoop/
+[root@bigdata01 hadoop]# 
+
+# 1、修改hadoop-env.sh文件，在文件末尾增加环境变量信息
+[root@bigdata01 hadoop]# vi hadoop-env.sh 
+export JAVA_HOME=/data/soft/jdk1.8
+export HADOOP_LOG_DIR=/data/hadoop_repo/logs/hadoop
+
+# 2、修改core-site.xml文件，注意fs.defaultFS属性中的主机名需要和主节点的主机名保持一致
+[root@bigdata01 hadoop]# vi core-site.xml
+<configuration>
+    <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://bigdata01:9000</value>
+    </property>
+    <property>
+        <name>hadoop.tmp.dir</name>
+        <value>/data/hadoop_repo</value>
+   </property>
+</configuration>
+
+# 3、修改hdfs-site.xml文件，把hdfs中文件副本的数量设置为2，最多为2，因为现在集群中有两个从节点，还有secondaryNamenode进程所在的节点信息
+[root@bigdata01 hadoop]# vi hdfs-site.xml 
+<configuration>
+    <property>
+        <name>dfs.replication</name>
+        <value>2</value>
+    </property>
+    <property>
+        <name>dfs.namenode.secondary.http-address</name>
+        <value>bigdata01:50090</value>
+    </property>
+</configuration>
+
+# 4、修改mapred-site.xml，设置mapreduce使用的资源调度框架
+[root@bigdata01 hadoop]# vi mapred-site.xml
+<configuration>
+    <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+    </property>
+</configuration>
+
+# 5、修改yarn-site.xml，设置yarn上支持运行的服务和环境变量白名单
+[root@bigdata01 hadoop]# vi yarn-site.xml
+<configuration>
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+    <property>
+        <name>yarn.nodemanager.env-whitelist</name>
+        <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
+    </property>
+	<property>
+		<name>yarn.resourcemanager.hostname</name>
+		<value>bigdata01</value>
+	</property>
+</configuration>
+
+# 6、修改workers文件，增加所有从节点的主机名，一个一行
+[root@bigdata01 hadoop]# vi workers
+bigdata02
+bigdata03
+```
+
+##### 8、修改启动脚本
+
+只修改一台，修改完成后，scp 到其他节点即可
+
+```shell
+# 1、修改start-dfs.sh，stop-dfs.sh这两个脚本文件，在文件前面增加如下内容
+[root@bigdata01 hadoop]# cd /data/soft/hadoop-3.2.0/sbin
+[root@bigdata01 sbin]# vi start-dfs.sh
+HDFS_DATANODE_USER=root
+HDFS_DATANODE_SECURE_USER=hdfs
+HDFS_NAMENODE_USER=root
+HDFS_SECONDARYNAMENODE_USER=root
+
+[root@bigdata01 sbin]# vi stop-dfs.sh
+HDFS_DATANODE_USER=root
+HDFS_DATANODE_SECURE_USER=hdfs
+HDFS_NAMENODE_USER=root
+HDFS_SECONDARYNAMENODE_USER=root
+
+# 2、修改start-yarn.sh，stop-yarn.sh这两个脚本文件，在文件前面增加如下内容
+[root@bigdata01 sbin]# vi start-yarn.sh
+YARN_RESOURCEMANAGER_USER=root
+HADOOP_SECURE_DN_USER=yarn
+YARN_NODEMANAGER_USER=root
+
+[root@bigdata01 sbin]# vi stop-yarn.sh
+YARN_RESOURCEMANAGER_USER=root
+HADOOP_SECURE_DN_USER=yarn
+YARN_NODEMANAGER_USER=root
+```
+
+##### 9、同步 Hadoop 到其他节点
+
+```shell
+[root@bigdata01 sbin]# cd /data/soft/
+[root@bigdata01 soft]# scp -rq hadoop-3.2.0 bigdata02:/data/soft/
+[root@bigdata01 soft]# scp -rq hadoop-3.2.0 bigdata03:/data/soft/
+```
+
+##### 10、主节点格式化 HDFS
+
+```shell
+[root@bigdata01 soft]# cd /data/soft/hadoop-3.2.0
+[root@bigdata01 hadoop-3.2.0]# bin/hdfs namenode -format
+...
+common.Storage: Storage directory /data/hadoop_repo/dfs/name has been successfully formatted.
+...
+```
+
+##### 11、主节点启动集群
+
+```shell
+[root@bigdata01 hadoop-3.2.0]# sbin/start-all.sh 
+Starting namenodes on [bigdata01]
+Last login: Tue Apr  7 21:03:21 CST 2020 from 192.168.182.1 on pts/2
+Starting datanodes
+Last login: Tue Apr  7 22:15:51 CST 2020 on pts/1
+bigdata02: WARNING: /data/hadoop_repo/logs/hadoop does not exist. Creating.
+bigdata03: WARNING: /data/hadoop_repo/logs/hadoop does not exist. Creating.
+Starting secondary namenodes [bigdata01]
+Last login: Tue Apr  7 22:15:53 CST 2020 on pts/1
+Starting resourcemanager
+Last login: Tue Apr  7 22:15:58 CST 2020 on pts/1
+Starting nodemanagers
+Last login: Tue Apr  7 22:16:04 CST 2020 on pts/1
+
+# 验证
+[root@bigdata01 hadoop-3.2.0]# jps
+6128 NameNode
+6621 ResourceManager
+6382 SecondaryNameNode
+
+[root@bigdata02 ~]# jps
+2385 NodeManager
+2276 DataNode
+
+[root@bigdata03 ~]# jps
+2326 NodeManager
+2217 DataNode
+
+# web界面
+# HDFS webui界面：http://192.168.182.100:9870
+# YARN webui界面：http://192.168.182.100:8088
+```
+
+##### 12、启动 History Server
+
+每个节点都要
+
+```shell
+[root@bigdata01 hadoop-3.2.0]# mapred --daemon start historyserver
+```
+
+##### 13、停止集群
+
+```shell
+[root@bigdata01 hadoop-3.2.0]# sbin/stop-all.sh 
+Stopping namenodes on [bigdata01]
+Last login: Tue Apr  7 22:21:16 CST 2020 on pts/1
+Stopping datanodes
+Last login: Tue Apr  7 22:22:42 CST 2020 on pts/1
+Stopping secondary namenodes [bigdata01]
+Last login: Tue Apr  7 22:22:44 CST 2020 on pts/1
+Stopping nodemanagers
+Last login: Tue Apr  7 22:22:46 CST 2020 on pts/1
+Stopping resourcemanager
+Last login: Tue Apr  7 22:22:50 CST 2020 on pts/1
+```
+
 #### 3）客户端节点
 
 Hadoop 客户端节点，允许在业务机器上，操作 Hadoop 集群，避免直接把 Hadoop 集群的节点，暴露给开发人员，造成不安全的问题发生。
 
+**安装步骤**：把集群的 Hadoop 包发送到该节点即可，无需启动，只需要使用 bin 目录下的命令而已。
+
 ![1660397090440](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660397090440.png)
 
-### 1.7. 什么是 HDFS？
+### 1.7. Hadoop 安装部署？
+
+### 1.8. 什么是 HDFS？
 
 HDFS，Hadoop Distributed File System，是一种允许通过网络，在多台主机上分享文件的文件系统，可以让多台机器上的多个用户分享文件和存储空间，即共享的分布式文件系统。
 
@@ -79,7 +636,7 @@ HDFS，Hadoop Distributed File System，是一种允许通过网络，在多台�
 
 ![1660467170051](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660467170051.png)
 
-### 1.8. HDFS Shell 操作？
+### 1.9 HDFS Shell 操作？
 
 ####  1）命令格式
 
@@ -388,7 +945,7 @@ org.apache.hadoop.hdfs.server.namenode.SafeModeException: Cannot create director
 Safe mode is OFF
 ```
 
-### 1.9. HDFS Java 客户端操作？
+### 2.0. HDFS Java 客户端操作？
 
 #### 1）POM 依赖
 
@@ -546,7 +1103,7 @@ public class HdfsOp {
     }
 ```
 
-### 2.0. HDFS 架构原理？
+### 2.1. HDFS 架构原理？
 
 ![1660475210252](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660475210252.png)
 
@@ -714,7 +1271,7 @@ Federation 高扩展架构，可以解决单一命名空间的内存不足问题
 
 ![1660482562065](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660482562065.png)
 
-### 2.1. HDFS 源码解析？
+### 2.2. HDFS 源码解析？
 
 #### 1）读数据过程
 
@@ -769,14 +1326,14 @@ Federation 高扩展架构，可以解决单一命名空间的内存不足问题
 
 7. NameNode 根据客户端返回的状态信息，来判断本次写入数据是成功还是失败，如果成功，则需要对应更新元数据信息。 
 
-### 2.2. 什么是分布式计算？
+### 2.3. 什么是分布式计算？
 
 1. 移动计算：由于传统的移动数据方案，需要大规模地将数据向网络中传输，非常耗时，所以可以反过来，将计算程序移动到数据所在地节点，以节约网络 I/O 带来的损耗。
 2. 分布式计算的方案则是，通过局部节点进行移动计算，得出局部的结果，最终在把分散的局部结果汇总起来，得到最终的结果。
 
 ![1660648984985](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660648984985.png)
 
-### 2.3. 什么是 MapReduce？
+### 2.4. 什么是 MapReduce？
 
 1. MapReduce，是一种分布式计算模型，由 Google 提出，主要用于搜索领域，解决海量数据的计算问题。
 2. MapReduce，由两个阶段组成：
@@ -785,7 +1342,7 @@ Federation 高扩展架构，可以解决单一命名空间的内存不足问题
 
 ![1660651802579](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660651802579.png)
 
-### 2.4. MapReduce 执行原理？
+### 2.5. MapReduce 执行原理？
 
 ![1660650097690](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660650097690.png)
 
@@ -1906,11 +2463,11 @@ public class WordCountJobSkewReduceAgain {
 // 结论：该方案先针对性打散+再次聚合，整体耗时=1mins, 54sec+20sec=2min14sec，小于方案1的3mins, 19sec，性能提升了接近33%，因此，对于数据倾斜严重的数据，需要执行方案2，即先针对性打散+再次聚合结果
 ```
 
-### 2.5. 什么是 Yarn？
+### 2.6. 什么是 Yarn？
 
 Yarn，是 Hadoop 2.0 以后剥离出来的，一个实现 Hadoop 集群资源共享组件，不仅仅支持 MapReduce，还支持 Spark、Flink 等计算引擎。
 
-### 2.6. Yarn 架构原理？
+### 2.7. Yarn 架构原理？
 
 #### 1）架构模型
 
