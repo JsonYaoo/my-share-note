@@ -20080,6 +20080,54 @@ class Solution {
 }
 ```
 
+#### 459. 重复的子字符串
+
+##### 1）暴力枚举 | O（n^2）
+
+- **思路**：核心点在于，不断地看当前匹配串，是否与前一个匹配串一致。
+- **结论**：时间，4 ms，97.52%，空间，41.6 mb，76.14%，时间上，由于确定子串花费 O（n），匹配串判断花费 O（n），所以整体时间复杂度为 O（n^2），空间上，由于使用了一张 n 长的 chars 数组，所以额外空间复杂度为 O（n）。
+
+```java
+class Solution {
+    public boolean repeatedSubstringPattern(String s) {
+        char[] chars = s.toCharArray();
+        int n = chars.length;
+        if(n <= 1) {
+            return false;
+        }
+        
+        // 确定[0, i)字符串作为子串, 根据题目背景, 只需要确定以i-1作为尾的子串即可, 以x开头的子串就无需判断了, 因为已经判断过了或者肯定不符合
+        int len;
+        boolean isMatch;
+        for(int i = 1; i < n; i++) {
+            len = i - 1 + 1;
+            isMatch = true;
+            
+            // 如果整个长度不是len的整数倍, 则肯定不会完全匹配
+            if(n % len != 0) {
+                continue;
+            }
+
+            // 确定[i, n)字符串作为匹配串
+            for(int j = i; j < n; j++) {
+                // 看当前匹配串是否与前一个匹配串一致
+                if(chars[j] != chars[j - len]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+
+            // 如果完全匹配, 则返回true
+            if(isMatch) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+```
+
 ### 3.3. 算法思想 - 马拉车
 
 #### 5. 最长回文子串 | medium

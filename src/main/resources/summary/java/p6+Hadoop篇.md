@@ -834,6 +834,10 @@ drwx------   - root supergroup          0 2022-08-14 20:32 /user/root/.Trash/Cur
 Found 2 items
 drwx------   - root supergroup          0 2022-08-14 20:26 /user/root/.Trash/220814202900
 drwx------   - root supergroup          0 2022-08-14 20:32 /user/root/.Trash/220814203239
+
+# 直接删除文件/文件夹，跳过回收站
+[root@bigdata04 ~]# hdfs dfs -rm -R -skipTrash /data/ex_par
+Deleted /data/ex_par
 ```
 
 #### 11）高级命令 - 查询文件头部内容
@@ -943,6 +947,17 @@ org.apache.hadoop.hdfs.server.namenode.SafeModeException: Cannot create director
 # 手动强制退出安全模式
 [root@bigdata01 hadoop]# hdfs dfsadmin -safemode leave
 Safe mode is OFF
+```
+
+#### 17）高级命令 - 查看磁盘占用情况
+
+```shell
+# 这里是2个副本，所以每个文件总的占用空间 = 原始文件大小 * 2
+[root@bigdata04 ~]# hdfs dfs -du -h /
+508     1016    /data
+15.6 M  31.3 M  /tmp
+1018    2.0 K   /user
+2.0 G   4.0 G   /words.data
 ```
 
 ### 2.0. HDFS Java 客户端操作？
