@@ -45,7 +45,7 @@ Hadoop，是一个由 Apache 开发的分布式系统基础架构，充分利用
 2. MapReduce：是一个计算模型，负责海量数据的分布式计算。
 3. YARN：负责集群资源的管理和调度。
 
-### 1.6. Hadoop 集群架构？
+### 1.6. Hadoop 安装部署？
 
 | 部署方式     | 部署详情            |
 | ------------ | ------------------- |
@@ -626,9 +626,7 @@ Hadoop 客户端节点，允许在业务机器上，操作 Hadoop 集群，避�
 
 ![1660397090440](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660397090440.png)
 
-### 1.7. Hadoop 安装部署？
-
-### 1.8. 什么是 HDFS？
+### 1.7. 什么是 HDFS？
 
 HDFS，Hadoop Distributed File System，是一种允许通过网络，在多台主机上分享文件的文件系统，可以让多台机器上的多个用户分享文件和存储空间，即共享的分布式文件系统。
 
@@ -636,7 +634,7 @@ HDFS，Hadoop Distributed File System，是一种允许通过网络，在多台�
 
 ![1660467170051](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660467170051.png)
 
-### 1.9 HDFS Shell 操作？
+### 1.8 HDFS Shell 操作？
 
 ####  1）命令格式
 
@@ -960,7 +958,7 @@ Safe mode is OFF
 2.0 G   4.0 G   /words.data
 ```
 
-### 2.0. HDFS Java 客户端操作？
+### 1.9. HDFS Java 客户端操作？
 
 #### 1）POM 依赖
 
@@ -1118,7 +1116,7 @@ public class HdfsOp {
     }
 ```
 
-### 2.1. HDFS 架构原理？
+### 2.0. HDFS 架构原理？
 
 ![1660475210252](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660475210252.png)
 
@@ -1286,7 +1284,7 @@ Federation 高扩展架构，可以解决单一命名空间的内存不足问题
 
 ![1660482562065](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660482562065.png)
 
-### 2.2. HDFS 源码解析？
+### 2.1. HDFS 源码解析？
 
 #### 1）读数据过程
 
@@ -1341,14 +1339,14 @@ Federation 高扩展架构，可以解决单一命名空间的内存不足问题
 
 7. NameNode 根据客户端返回的状态信息，来判断本次写入数据是成功还是失败，如果成功，则需要对应更新元数据信息。 
 
-### 2.3. 什么是分布式计算？
+### 2.2. 什么是分布式计算？
 
 1. 移动计算：由于传统的移动数据方案，需要大规模地将数据向网络中传输，非常耗时，所以可以反过来，将计算程序移动到数据所在地节点，以节约网络 I/O 带来的损耗。
 2. 分布式计算的方案则是，通过局部节点进行移动计算，得出局部的结果，最终在把分散的局部结果汇总起来，得到最终的结果。
 
 ![1660648984985](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660648984985.png)
 
-### 2.4. 什么是 MapReduce？
+### 2.3. 什么是 MapReduce？
 
 1. MapReduce，是一种分布式计算模型，由 Google 提出，主要用于搜索领域，解决海量数据的计算问题。
 2. MapReduce，由两个阶段组成：
@@ -1357,7 +1355,7 @@ Federation 高扩展架构，可以解决单一命名空间的内存不足问题
 
 ![1660651802579](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660651802579.png)
 
-### 2.5. MapReduce 执行原理？
+### 2.4. MapReduce 执行原理？
 
 ![1660650097690](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1660650097690.png)
 
@@ -2478,11 +2476,11 @@ public class WordCountJobSkewReduceAgain {
 // 结论：该方案先针对性打散+再次聚合，整体耗时=1mins, 54sec+20sec=2min14sec，小于方案1的3mins, 19sec，性能提升了接近33%，因此，对于数据倾斜严重的数据，需要执行方案2，即先针对性打散+再次聚合结果
 ```
 
-### 2.6. 什么是 Yarn？
+### 2.5. 什么是 Yarn？
 
 Yarn，是 Hadoop 2.0 以后剥离出来的，一个实现 Hadoop 集群资源共享组件，不仅仅支持 MapReduce，还支持 Spark、Flink 等计算引擎。
 
-### 2.7. Yarn 架构原理？
+### 2.6. Yarn 架构原理？
 
 #### 1）架构模型
 

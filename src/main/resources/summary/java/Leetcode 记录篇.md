@@ -20128,6 +20128,125 @@ class Solution {
 }
 ```
 
+##### 2）模拟 + 移位 + contains 匹配 | O（2 * n + 4 * n^2）
+
+- 思路：
+  1. 原串为：abab => 右移位 1 次：baba => 再右移位 1 次：abab，如果能移回原串，则说明原串能够由其中一个子串重复构成。
+  2. 而如果模拟这多次移位 + 匹配最多 len - 1 次，会导致复杂度上升很多，为了避免这种无用的环绕，可以先把字符串复制一倍，形成环字符串，即 `abab + abab = abababab` 。
+  3. 其中 `baba` 、`abab` 就包含在 `abababab` 的后面子串中，所以，判断能否由其中一个子串重复构成，则只需要看 `abababab` 中是否存在 `abab` 子串即可。
+- 结论：时间，68 ms，34.03%，空间，41.6 mb，85.28%，时间上，由于字符串截取花费 O（2 * n），contains 花费 O（4 * n^2），所以整体时间复杂度为 O（2 * n + 4 * n^2），空间上，由于只使用了有限几个变量，所以额外空间复杂度为 O（1）。
+
+```java
+class Solution {
+    public boolean repeatedSubstringPattern(String s) {
+        return (s + s).substring(1, s.length() * 2 - 1).contains(s);
+    }
+}
+```
+
+##### 3）模拟 + 移位 + KMP 匹配 | O（8 * n）
+
+- **思路**：基于 2 的思路，但直接使用 contains 时间复杂度为 O（n^2），所以可以使用 KMP 算法进行优化。
+- **结论**：
+  1. 时间，7 ms，82.42%，空间，42.2 mb，10.09%。
+  2. 时间上，时间上，由于字符串截取花费 O（2 * n），KMP 中，基于 needle 匹配串初始化 nextArr 数组的过程，最多花费 O（2 * n），基于 haystack 主串可通过 i 与 i - cn 的增减过程判断出来，加速主串的匹配过程，最多花费 O（2 * 2 * n），可通过 hi 与 hi - ni 的增减过程判断出来 ，所以整体时间复杂度为 O（2 * n + 2 * n + 2 * 2 * n） = O（8 * n）。
+  3. 空间上，由于使用了一个 2 * n 长的 nextArr 数组，所以额外空间复杂度为 O（2 * n）。
+
+```java
+class Solution {
+    public boolean repeatedSubstringPattern(String s) {
+        String str = (s + s).substring(1, s.length() * 2 - 1);
+        return kmp(str, s) != -1;
+    }
+
+    // 找出原串haystack中, 第一次出现needle匹配串的索引
+    public int kmp(String haystack, String needle) {
+        if(haystack == null || needle == null) {
+            return -1;
+        }
+
+        int hlen = haystack.length();
+        int nlen = needle.length();
+        if(nlen == 0) {
+            return 0;
+        }
+        if(hlen == 0 || nlen > hlen) {
+            return -1;
+        }
+
+        char[] charsH = haystack.toCharArray();
+        char[] charsN = needle.toCharArray();
+
+        int hi = 0, ni = 0;
+        int[] nextArr = getNextArr(charsN);
+        
+        // O(2 * n)
+        while(hi < charsH.length && ni < charsN.length) {
+            // 一路匹配, 都各自+1
+            if(charsH[hi] == charsN[ni]) {
+                hi++;
+                ni++;
+            }
+            // ni == 0, 表示charsN已经无法减少了, 则选择下一个hi, 与charsN从头开始匹配
+            else if(ni == 0) {
+                hi++;
+            } 
+            // 如果charsN还可以减少, 那么就来到上一个匹配的地方, charsH保持i不变
+            else {
+                ni = nextArr[ni];
+            }
+        }
+
+        // ni越界, 则说明已经匹配出charsN了, 而如果hi越界, 但ni没越界, 则说明遍历了整个charsH串, 都没办法匹配出charsN来, 则返回-1
+        return ni == charsN.length? hi - ni : -1;
+    }
+
+    // 类似于小kmp算法
+    private int[] getNextArr(char[] chars) {
+        if(chars.length == 1) {
+            return new int[] { -1 };
+        }
+
+        // 人为规定
+        int[] nextArr = new int[chars.length];
+        nextArr[0] = -1;
+        nextArr[1] = 0;
+
+        // i表示要计算的nextArr下标
+        int i = 2;
+
+        // cn既表示之前匹配过程中, 已出现的最长相同前缀后缀的长度是多少, 
+        // cn也表示chars[i-1]要和chars[cn]相比较的地方
+        int cn = 0;
+
+        // O(2 * m)
+        while(i < chars.length) {
+            // 如果与cn的字符比较相同的话, 则next[2]=之前的最长相同前缀后缀的长度+1, 相当于跟之前连续匹配的意思
+            if(chars[i - 1] == chars[cn]) {
+                nextArr[i] = cn + 1;
+
+                // 最长相同前缀后缀的长度+1, 同时也表示下一个要比较的字符+1
+                cn++;
+
+                // 继续更新下一个next[i]的信息
+                i++;
+            } 
+            // 如果与cn的字符比较不同, 且之前存在过最长相同前缀后缀, 那么看当时next[cn]的最长相同前缀后缀, 然后定位cn到那里, 根据next[cn]往前跳
+            else if(cn > 0) {
+                cn = nextArr[cn];
+            } 
+            // 如果与cn的字符比较不同, 且之前不存在相同前缀后缀, 说明到目前位置都没有出现相同的前缀后缀, 无法根据next[cn]往前跳, 那么更新当前next[i]信息为0
+            else {
+                nextArr[i] = 0;
+                i++;
+            }
+        }
+
+        return nextArr;
+    }
+}
+```
+
 ### 3.3. 算法思想 - 马拉车
 
 #### 5. 最长回文子串 | medium
