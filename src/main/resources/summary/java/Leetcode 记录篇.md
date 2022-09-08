@@ -7607,6 +7607,79 @@ class Solution {
 
 ### 1.5. 数据结构 - 滑动窗口
 
+#### 3. 无重复字符的最长子串 | medium
+
+##### 1）滑动窗口 + 队列 + 哈希表 | O（n）
+
+- **思路**：通过队列存放无重复字符，哈希表维护队列中字符出现的次数，遍历 chars 加入新字符前，先判断是否存在重复字符，存在的则移除再添加，然后使用 max 记录全局最大无重复字串长度。
+- **结论**：时间，7 ms，25.47%，空间，42.5 mb，5.08%，时间上，由于只需迭代一次字符串，所以时间复杂度为 O（n），空间上，由于使用了一张长 n 的 chars 数组，n 长的 queue 队列，n 长的 map 集合，所以额外空间复杂度为 O（3 * n）。
+
+```java
+class Solution {
+    public int lengthOfLongestSubstring(String s) {
+        char[] chars = s.toCharArray();
+        int n = chars.length;
+        
+        int max = 0;
+        Queue<Character> queue = new LinkedList<>();
+        Map<Character, Integer> map = new HashMap<>();
+        for(int i = 0; i < n; i++) {
+            char c = chars[i];
+            while(map.containsKey(c)) {
+                char first = queue.poll();
+
+                int cnt = map.get(first);
+                if(cnt == 1) {
+                    map.remove(first);
+                } else {
+                    map.put(first, cnt - 1);
+                }
+            }
+
+            queue.offer(c);
+            map.put(c, map.getOrDefault(c, 0) + 1);
+            max = Math.max(max, queue.size());
+        }
+
+        return max;
+    }
+}
+```
+
+##### 2）滑动窗口 + 哈希表 | O（n）
+
+- **思路**：由于是队列中是连续字串，所以可以直接使用一个 firsti 变量来替代队头，从而减少队列的出队、入队开销。
+- **结论**：时间，6 ms，40.84%，空间，41.8 mb，28.24%，时间上，由于只需迭代一次字符串，所以时间复杂度为 O（n），空间上，由于使用了一张长 n 的 chars 数组，n 长的 map 集合，所以额外空间复杂度为 O（2 * n）。
+
+```java
+class Solution {
+    public int lengthOfLongestSubstring(String s) {
+        char[] chars = s.toCharArray();
+        int n = chars.length;
+        
+        int max = 0, firsti = 0;
+        Map<Character, Integer> map = new HashMap<>();
+        for(int i = 0; i < n; i++) {
+            char c = chars[i];
+            while(map.containsKey(c)) {
+                char first = chars[firsti++];
+                int cnt = map.get(first);
+                if(cnt == 1) {
+                    map.remove(first);
+                } else {
+                    map.put(first, cnt - 1);
+                }
+            }
+
+            map.put(c, map.getOrDefault(c, 0) + 1);
+            max = Math.max(max, i - firsti + 1);
+        }
+
+        return max;
+    }
+}
+```
+
 #### 30. 串联所有单词的子串 | hard
 
 ##### 1）暴力解法 + 滑动窗口 | O（sn * m）
