@@ -4738,6 +4738,114 @@ class Solution {
 }
 ```
 
+#### 129. 求根节点到叶节点数字之和 | medium
+
+##### 1）深度优先搜索 | O（n）
+
+- **思路**：dfs，上层传递累加结果下来，然后结果 * 10 + 当前节点的值，不断传递下去，每碰到叶子节点就结算，汇总到 res 结果中。
+- **结论**：时间，0 ms，100%，空间，39.4 mb，12.57%，时间上，最多需要遍历 n 个节点，所以整体时间复杂度为 O（n），空间上，由于递归栈花费 O（logn），所以整体额外空间复杂度为 O（logn）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    private int res = 0;
+
+    public int sumNumbers(TreeNode root) {
+        doSum(root, 0);
+        return res;
+    }
+
+    private void doSum(TreeNode root, int cur) {
+        cur = cur * 10 + root.val;
+
+        // 叶子节点, 则结算
+        if(root.left == null && root.right == null) {
+            res += cur;
+        } 
+        // 非叶子节点, 则累加
+        else {
+            if(root.left != null) {
+                doSum(root.left, cur);
+            }
+            if(root.right != null) {
+                doSum(root.right, cur);
+            }
+        }
+    }
+}
+```
+
+##### 2）广度优先搜索 | O（n）
+
+- **思路**：bfs，使用一张 fatherSumQueue 的队列，存储父节点的累加结果，每次从队列获取到节点后，则累加父节点的累加结果，碰到叶子节点则结算到 res 中。
+- **结论**：时间，0 ms，100.00%，空间，39.6 mb，5.07%，时间上，最多需要遍历 n 个节点，所以整体时间复杂度为 O（n），空间上，由于 queue 最多花费 O（2^[logn - 1]），fatherSumQueue 最多花费 O（2^[logn - 1]），所以整体额外空间复杂度为 O（2 * 2^[logn - 1]）。
+
+```java
+/**
+ * Definition for a binary tree node.
+ * public class TreeNode {
+ *     int val;
+ *     TreeNode left;
+ *     TreeNode right;
+ *     TreeNode() {}
+ *     TreeNode(int val) { this.val = val; }
+ *     TreeNode(int val, TreeNode left, TreeNode right) {
+ *         this.val = val;
+ *         this.left = left;
+ *         this.right = right;
+ *     }
+ * }
+ */
+class Solution {
+    public int sumNumbers(TreeNode root) {
+        Queue<TreeNode> queue = new LinkedList<>();
+        queue.offer(root);
+
+        Queue<Integer> fatherSumQueue = new LinkedList<>();
+        fatherSumQueue.offer(0);
+
+        // bfs
+        int res = 0, cur;
+        while(!queue.isEmpty()) {
+            root = queue.poll();
+            cur = fatherSumQueue.poll() * 10 + root.val;
+
+            // 叶子节点, 则结算
+            if(root.left == null && root.right == null) {
+                res += cur;
+            }
+            // 非叶子节点, 则累加
+            else {
+                if(root.left != null) {
+                    fatherSumQueue.offer(cur);
+                    queue.offer(root.left);
+                }
+                if(root.right != null) {
+                    fatherSumQueue.offer(cur);
+                    queue.offer(root.right);
+                }
+            }
+        }
+
+        return res;
+    }
+}
+```
+
 #### 138. 复制带随机指针的链表 | medium
 
 ##### 1）复制节点 + 改变 random 指针 + 脱离原链表 | O（3 * n）
@@ -7141,6 +7249,271 @@ class Solution {
 }
 ```
 
+#### 130. 被围绕的区域 | medium
+
+##### 1）并查集法 | O（m * n * [logn + 2]）
+
+- **思路**：把问题分为两个集合，一个是与边界 0 连通的集合，一个是不与边界 0 连通的集合，在并查集合并完成后，通过构造一个哑节点来标记与边界 0 连通，把那些不与边界 0 连通的置为 "X" 即可。
+- **结论**：
+  1. 时间，54 ms，5.23%，50.9mb，5.03%。
+  2. 时间上，并查集初始化花费 O（m * n），由于使用了路径压缩，使得每次的并查集合并平均花费 O（logn），但最多需要合并 m * n 次，所以最多花费 O（m * n * logn），最后在染色时又花费 O（m * n），所以整体时间复杂度为 O（m * n * [logn + 2]）。
+  3. 空间上，由于 elementMap 花费 O（m * n），fatherMap 花费 O（m * n ），sizeMap 花费 O（2），初始化的 set 花费 O（m * n），所以整体额外空间复杂度为 O（3 * m * n）。
+
+```java
+class Element<V> {
+    V value;
+
+    Element(V value) {
+        this.value = value;
+    }
+}
+
+class UnionFindSet<V> {
+    private Map<V, Element<V>> elementMap = new HashMap<>();
+    private Map<Element<V>, Element<V>> fatherMap = new HashMap<>();
+    private Map<Element<V>, Integer> sizeMap = new HashMap<>();
+
+    UnionFindSet(Set<V> set) {
+        for(V v : set) {
+            Element<V> e = new Element<>(v);
+            elementMap.put(v, e);
+            fatherMap.put(e, e);
+            sizeMap.put(e, 1);
+        }
+    }
+
+    private Element<V> findHeader(V value) {
+        LinkedList<Element<V>> stack = new LinkedList<>();
+
+        Element<V> e = elementMap.get(value), ef;
+        while(e != (ef = fatherMap.get(e))) {
+            stack.push(e);
+            e = ef;
+        }
+        while (!stack.isEmpty()) {
+            fatherMap.put(stack.pop(), e);
+        }
+        
+        return e;
+    }
+
+    boolean isSameSet(V a, V b) {
+        if(!elementMap.containsKey(a) || !elementMap.containsKey(b)) {
+            return false;
+        }
+        return findHeader(a) == findHeader(b);
+    }
+
+    void union(V a, V b) {
+        if(!elementMap.containsKey(a) || !elementMap.containsKey(b)) {
+            return;
+        }
+
+        Element<V> af = findHeader(a);
+        Element<V> bf = findHeader(b);
+
+        if(af != bf) {
+            Element<V> big = sizeMap.get(af) > sizeMap.get(bf)? af : bf;
+            Element<V> small = big == af? bf : af;
+            fatherMap.put(small, big);
+
+            int newSize = sizeMap.get(small) + sizeMap.get(big);
+            sizeMap.put(big, newSize);
+            sizeMap.remove(small);
+        }
+    }
+
+    boolean isElement(V v) {
+        return elementMap.containsKey(v);
+    }
+}
+
+class Solution {
+    public void solve(char[][] board) {
+        int m = board.length, n = board[0].length, size = m * n;
+
+        // 初始化并查集
+        Set<Integer> set = new HashSet<>();
+        for(int i = 0; i < size + 1; i++) {
+            set.add(i);
+        }
+        UnionFindSet<Integer> ufs = new UnionFindSet<>(set);
+
+        // 构造一个连接边界的哑节点
+        int dummy = size, curIdx;
+
+        // 合并集合
+        for(int i = 0; i < m; i++) {
+            for(int j = 0; j < n; j++) {
+                if(board[i][j] == 'X') {
+                    continue;
+                }
+
+                // 边界处理
+                curIdx = getIdx(n, i, j);
+                if(i == 0 || i == m - 1 || j == 0 || j == n - 1) {
+                    ufs.union(dummy, curIdx);
+                    continue;
+                }
+            
+                // 上为0, 则连通
+                if(i - 1 > -1 && board[i - 1][j] == 'O') {
+                    ufs.union(curIdx, getIdx(n, i - 1, j));
+                }
+                // 下为0, 则连通
+                if(i + 1 < m && board[i + 1][j] == 'O') {
+                    ufs.union(curIdx, getIdx(n, i + 1, j));
+                }
+                // 左为0, 则连通
+                if(j - 1 > -1 && board[i][j - 1] == 'O') {
+                    ufs.union(curIdx, getIdx(n, i, j - 1));
+                }
+                // 右为0, 则连通
+                if(j + 1 < n && board[i][j + 1] == 'O') {
+                    ufs.union(curIdx, getIdx(n, i, j + 1));
+                }
+            }
+        }
+
+        // 染色
+        for(int i = 0; i < m; i++) {
+            for(int j = 0; j < n; j++) {
+                curIdx = getIdx(n, i, j);
+                if(!ufs.isSameSet(dummy, curIdx)) {
+                    board[i][j] = 'X';
+                }
+            }
+        }
+    }
+
+    // 0~size-1编号
+    private int getIdx(int n, int i, int j) {
+        return i * n + j;
+    }
+}
+```
+
+##### 2）DFS | O（2 * m * n）
+
+- **思路**：从边界开始 dfs，标为为 'A'，最后还原 'A' 为 'O'，染色还为 'O' 的为 'X'。
+- **结论**：时间，1 ms，99.90%，空间，43.3 mb，80.08%，时间上，由于 dfs 一共花费 O（m * n），最后还原 + 染色又花费 O（m * n），所以整体时间复杂度为 O（2 * m * n），空间上，dfs 递归栈最深为 O（m * n），所以整体额外空间复杂度为 O（m * n）。
+
+```java
+class Solution {
+    public void solve(char[][] board) {
+        int m = board.length, n = board[0].length;
+
+        // 第一列、最后一列
+        for(int i = 0; i < m; i++) {
+            dfs(board, m, n, i, 0);
+            dfs(board, m, n, i, n - 1);
+        }
+
+        // 第一行、最后一行
+        for(int j = 0; j < n; j++) {
+            dfs(board, m, n, 0, j);
+            dfs(board, m, n, m - 1, j);
+        }
+
+        // 还原那些染色为'A'、染色那些还为'O'的为'X'
+        for(int i = 0; i < m; i++) {
+            for(int j = 0; j < n; j++) {
+                if(board[i][j] == 'A') {
+                    board[i][j] = 'O';
+                } else {
+                    board[i][j] = 'X';
+                }
+            }
+        }
+    }
+
+    // 从i、j开始dfs染色
+    private void dfs(char[][] board, int m, int n, int i, int j) {
+        // 越界退出、O不连续退出
+        if(i < 0 || i == m || j < 0 || j == n || board[i][j] != 'O') {
+            return;
+        }
+
+        // 染色为'A'
+        board[i][j] = 'A';
+
+        // 上下左右
+        dfs(board, m, n, i - 1, j);
+        dfs(board, m, n, i + 1, j);
+        dfs(board, m, n, i, j - 1);
+        dfs(board, m, n, i, j + 1);
+    }
+}
+```
+
+##### 3）BFS | O（2 * m * n）
+
+- **思路**：从边界开始 bfs，标为为 'A'，最后还原 'A' 为 'O'，染色还为 'O' 的为 'X'。
+- **结论**：时间，1 ms，99.90%，空间，43.3 mb，76.02%，时间上，由于 bfs 一共花费 O（m * n），最后还原 + 染色又花费 O（m * n），所以整体时间复杂度为 O（2 * m * n），空间上，bfs 队列最多需要存储 m * n 个元素，所以整体额外空间复杂度为 O（m * n）。
+
+```java
+class Solution {
+
+    private int[][] BFS_FACTORS = new int[][] { {-1, 0}, {1, 0}, {0, -1}, {0, 1} };
+
+    public void solve(char[][] board) {
+        int m = board.length, n = board[0].length;
+
+        // 第一列、最后一列
+        for(int i = 0; i < m; i++) {
+            bfs(board, m, n, i, 0);
+            bfs(board, m, n, i, n - 1);
+        }
+
+        // 第一行、最后一行
+        for(int j = 0; j < n; j++) {
+            bfs(board, m, n, 0, j);
+            bfs(board, m, n, m - 1, j);
+        }
+
+        // 还原那些染色为'A'、染色那些还为'O'的为'X'
+        for(int i = 0; i < m; i++) {
+            for(int j = 0; j < n; j++) {
+                if(board[i][j] == 'A') {
+                    board[i][j] = 'O';
+                } else {
+                    board[i][j] = 'X';
+                }
+            }
+        }
+    }
+
+    // 从i、j开始bfs染色
+    private void bfs(char[][] board, int m, int n, int i, int j) {
+        // 越界退出、O不连续退出
+        if(i < 0 || i == m || j < 0 || j == n || board[i][j] != 'O') {
+            return;
+        }
+
+        // 染色、开始BFS
+        board[i][j] = 'A';
+        Queue<int[]> queue = new LinkedList<>();
+        queue.offer(new int[] { i, j });
+        while(!queue.isEmpty()) {
+            int[] element = queue.poll();
+            for(int[] bfs : BFS_FACTORS) {
+                i = element[0] + bfs[0];
+                j = element[1] + bfs[1];
+
+                // 越界跳过、O不连续跳过
+                if(i < 0 || i == m || j < 0 || j == n || board[i][j] != 'O') {
+                    continue;
+                }
+
+                // 染色, 继续BFS
+                board[i][j] = 'A';
+                queue.offer(new int[] { i, j });
+            }
+        }
+    }
+}
+```
+
 #### 200. 岛屿数量 | medium
 
 ##### 1）深度优先搜索 | O（2 * m * n）
@@ -7374,7 +7747,6 @@ class Solution {
                 }
 
                 // 合并并查集
-                grid[i][j] = '2';
                 int p = i * m + j;
                 if(i-1 > -1 && grid[i-1][j] == '1') {
                     unionFindSet.union(p, (i-1) * m + j);
@@ -19708,6 +20080,393 @@ class Solution {
 ```
 
 ### 3.1. 算法思想 - BFS
+
+#### 126. 单词接龙 II | hard
+
+##### 1）单向 BFS + 枚举 + DFS | O（n * 26 * m + n^2）
+
+- **思路**：
+  1. 在 《单词接龙》解法 1 的基础上，增加同层级的校验，如果属于下一层级的则加入 fromsMap 前驱列表中，最后通过 dfs 以及利用前驱集合，封装出所有最优结果的路径出来。
+  2. 而由于这道题是收集路径每个节点，所以如果采用双向 BFS 的话，则需要分开两个 map 分别收集，太麻烦了，这里先不做实现了。
+- **结论**：
+  1. 时间，10 ms，91.56%，空间，42.6 mb，6.40%。
+  2. 时间上，遍历单词列表加入 wordSet 花费 O（n），由于设置了 vis 访问过滤，所以 bfs 最多遍历 n 个节点，然后每个节点枚举 + 判断共花费 O（n * 26 * m），m 代表 endWord 的字符长度，假设 n 个节点都每个节点都有 n - 1条线路，则 dfs 最多花费 O（ n * [n - 1] ），所以整体时间复杂度为 O（n + n * 26 * m + n * [n - 1]）= O（n * 26 * m + n^2）。
+  3. 空间上，wordSet 花费 O（n），queue 花费 O（n），vis 花费 O（n），curChars 用完就释放，所以花费 O（m），m 代表 curWord 的长度 = endWord，假设 n 个节点都每个节点都有 n - 1条线路，则 fromsMap 最多花费 O（n * [n - 1]），dfs 递归栈深度最大为 O（n），所以整体额外空间复杂度为 O（3 * n + m + n * [n - 1] + n）= O（3 * n + m + n^2）。
+
+```java
+class Solution {
+    public List<List<String>> findLadders(String beginWord, String endWord, List<String> wordList) {
+        Set<String> wordSet = new HashSet<>(wordList);
+        if(!wordSet.contains(endWord)) {
+            return new ArrayList<>();
+        }
+
+        // 防止重复循环
+        wordSet.remove(beginWord);
+
+        // 广度优先搜索
+        Map<String, Set<String>> fromsMap = new HashMap<>();
+        boolean isFound = bfs(wordSet, fromsMap, beginWord, endWord);
+
+        // 倒序dfs组装返回结果
+        List<List<String>> res = new ArrayList<>();
+        if(isFound) {
+            Deque<String> pathDeque = new LinkedList<>();
+            pathDeque.offerLast(endWord);
+            dfs(res, pathDeque, fromsMap, beginWord, endWord);
+        }
+
+        return res;
+    }
+
+    // 倒序dfs组装返回结果
+    private void dfs(List<List<String>> res, Deque<String> pathDeque, 
+                     Map<String, Set<String>> fromsMap,
+                     String beginWord, String curWord) {
+        // 遍历到开头了, 则组装结果
+        if(curWord.equals(beginWord)) {
+            res.add(new ArrayList<>(pathDeque));
+            return;
+        }
+
+        // 往前寻找节点
+        for(String preWord : fromsMap.get(curWord)) {
+            pathDeque.offerFirst(preWord);
+            dfs(res, pathDeque, fromsMap, beginWord, preWord);
+            pathDeque.pollFirst();
+        }
+    }
+
+    // 广度优先搜索
+    private boolean bfs(Set<String> wordSet, Map<String, Set<String>> fromsMap,
+                        String beginWord, String endWord) {
+        // 使用队列实现单向BFS，找到即最小
+        Queue<String> queue = new LinkedList<>();
+        queue.offer(beginWord);
+
+        Set<String> vis = new HashSet<>();
+        vis.add(beginWord);
+
+        Map<String, Integer> stepMap = new HashMap<>();
+        stepMap.put(beginWord, 0);
+
+        // 开始广度优先搜索
+        String curWord;
+        int step = 0, curSize;
+        boolean isFound = false;
+        while(!queue.isEmpty()) {
+            curSize = queue.size();
+
+            // 遍历当前层的所有节点
+            for(int i = 0; i < curSize; i++) {
+                curWord = queue.poll();
+
+                // 枚举+判断从curWord节点, 进行bfs是否符合转换到endWord的规则
+                if(isVaild(wordSet, queue, vis, fromsMap, curWord, endWord, stepMap, step)) {
+                    isFound = true;
+                }
+            }
+
+            // 如果发现最短路, 则停止遍历
+            if(isFound) {
+                break;
+            }
+
+            // 如果当前层遍历完毕, 还没找到符合转换规则的点, 则进入下一层
+            step++;
+        }
+
+        return isFound;
+    }
+
+    // 枚举+判断从curWord节点, 进行bfs是否符合转换到endWord的规则
+    private boolean isVaild(Set<String> wordSet, Queue<String> queue, 
+                            Set<String> vis, Map<String, Set<String>> fromsMap,
+                            String curWord, String endWord,
+                            Map<String, Integer> stepMap, int step) {
+        // 长度不同, 则必不能转
+        int curLen = curWord.length(), endLen = endWord.length();
+        if(curLen != endLen) {
+            return false;
+        }
+        
+        // 每次需要判断endWord长度
+        char bakChar;
+        String nextWord;
+        boolean isFound = false;
+        char[] curChars = curWord.toCharArray();
+        for(int i = 0; i < endLen; i++) {
+            // 先备份当前第i个字符
+            bakChar = curChars[i];
+        
+            // 枚举a~z一共26个字符
+            for(char j = 'a'; j <= 'z'; j++) {
+                // 如果字符相同, 则无需替换
+                if(j == bakChar) {
+                    continue;
+                }
+                
+                // 尝试替换掉第i个字符为j字符
+                curChars[i] = j;
+                nextWord = new String(curChars);
+
+                // 判断是否在单词列表中
+                if(wordSet.contains(nextWord)) {
+                    if(!stepMap.containsKey(nextWord) || stepMap.get(nextWord) == step + 1) {
+                        fromsMap.putIfAbsent(nextWord, new HashSet<>());
+                        fromsMap.get(nextWord).add(curWord);
+                    }
+
+                    // 判断是否转换成功
+                    if(nextWord.equals(endWord)) {
+                        isFound = true;
+                    }
+
+                    // 没转换成功, 但在单词列表中, 则把它加入到下一层
+                    if(!vis.contains(nextWord)) {
+                        queue.offer(nextWord);
+                        vis.add(nextWord);
+                        stepMap.put(nextWord, step + 1);
+                    }
+                }
+                
+                // 当前j字符替换后, 如果没转换成功, 则无需恢复那么快, 继续尝试即可
+            }
+
+            // 枚举完毕都没转换成功, 则恢复
+            curChars[i] = bakChar;
+        }
+
+        // endWord上每个位置的字符、a~z每个字符都尝试过, 依然转换不过来, 则返回false
+        return isFound;
+    }
+}
+```
+
+#### 127. 单词接龙 | hard
+
+##### 1）单向 BFS + 枚举 | O（n + n * 26 * m）
+
+- **思路**：见代码注释。
+- **结论**：
+  1. 时间，67 ms，65.35%，空间，44.6 mb，29.01%。
+  2. 时间上，遍历单词列表加入 wordSet 花费 O（n），由于设置了 vis 访问过滤，所以 bfs 最多遍历 n 个节点，然后每个节点枚举 + 判断共花费 O（n * 26 * m），m 代表 endWord 的字符长度，所以整体时间复杂度为 O（n + n * 26 * m）。
+  3. 空间上，wordSet 花费 O（n），queue 花费 O（n），vis 花费 O（n），curChars 用完就释放，所以花费 O（m），m 代表 curWord 的长度 = endWord，所以整体额外空间复杂度为 O（3 * n + m）。
+
+```java
+class Solution {
+    public int ladderLength(String beginWord, String endWord, List<String> wordList) {
+        Set<String> wordSet = new HashSet<>(wordList);
+        if(!wordSet.contains(endWord)) {
+            return 0;
+        }
+
+        // 防止重复循环
+        wordSet.remove(beginWord);
+
+        // 使用队列实现单向BFS，找到即最小
+        Queue<String> queue = new LinkedList<>();
+        Set<String> vis = new HashSet<>();
+        queue.offer(beginWord);
+        vis.add(beginWord);
+
+        // 开始广度优先搜索
+        String curWord;
+        int step = 1, curSize;
+        while(!queue.isEmpty()) {
+            curSize = queue.size();
+
+            // 遍历当前层的所有节点
+            for(int i = 0; i < curSize; i++) {
+                curWord = queue.poll();
+
+                // 枚举+判断从curWord节点, 进行bfs是否符合转换到endWord的规则
+                if(isVaild(wordSet, queue, vis, curWord, endWord)) {
+                    return step + 1;
+                }
+            }
+            
+            // 如果当前层遍历完毕, 还没找到符合转换规则的点, 则进入下一层
+            step++;
+        }
+
+        // 实在找不到, 则返回0
+        return 0;
+    }
+
+    // 枚举+判断从curWord节点, 进行bfs是否符合转换到endWord的规则
+    private boolean isVaild(Set<String> wordSet, Queue<String> queue, 
+                            Set<String> vis, String curWord, String endWord) {
+        // 长度不同, 则必不能转
+        int curLen = curWord.length(), endLen = endWord.length();
+        if(curLen != endLen) {
+            return false;
+        }
+        
+        // 每次需要判断endWord长度
+        char bakChar;
+        String nextWord;
+        char[] curChars = curWord.toCharArray();
+        for(int i = 0; i < endLen; i++) {
+            // 先备份当前第i个字符
+            bakChar = curChars[i];
+        
+            // 枚举a~z一共26个字符
+            for(char j = 'a'; j <= 'z'; j++) {
+                // 如果字符相同, 则无需替换
+                if(j == bakChar) {
+                    continue;
+                }
+                
+                // 尝试替换掉第i个字符为j字符
+                curChars[i] = j;
+                nextWord = new String(curChars);
+
+                // 判断是否在单词列表中
+                if(wordSet.contains(nextWord)) {
+                    // 判断是否转换成功
+                    if(nextWord.equals(endWord)) {
+                        return true;
+                    }
+
+                    // 没转换成功, 但在单词列表中, 则把它加入到下一层
+                    if(!vis.contains(nextWord)) {
+                        queue.offer(nextWord);
+                        vis.add(nextWord);
+                    }
+                }
+                
+                // 当前j字符替换后, 如果没转换成功, 则无需恢复那么快, 继续尝试即可
+            }
+
+            // 枚举完毕都没转换成功, 则恢复
+            curChars[i] = bakChar;
+        }
+
+        // endWord上每个位置的字符、a~z每个字符都尝试过, 依然转换不过来, 则返回false
+        return false;
+    }
+}
+```
+
+##### 2）双向 BFS + 枚举 | O（n + n * 13 * m）
+
+- **思路**：在终点已知的情况下，可以分别对起点和终点交替执行 BFS，优先选择小集合扩散，直到遍历的部分出现交集则结束 BFS，以缩小遍历的范围。
+
+  ![1663222106868](D:\Users\yaocs2\AppData\Roaming\Typora\typora-user-images\1663222106868.png)
+
+- **结论**：
+
+  1. 时间，10 ms，99.71%，空间，42.3 mb，74.66%。
+  2. 时间上，遍历单词列表加入 wordSet 花费 O（n），由于设置了 vis 访问过滤，以及从两个方向 bfs，问题又是求最小，所以此时的 bfs 最多遍历 n / 2 个节点，然后每个节点枚举 + 判断共花费 O（n / 2 * 26 * m），m 代表 endWord 的字符长度，所以整体时间复杂度为 O（n + n * 13 * m）。
+  3. 空间上，wordSet 花费 O（n），beginVis 和 endVis 一共花费 O（n），allVis 花费 O（n），curChars 用完就释放，所以花费 O（m），m 代表 curWord 的长度 = endWord，所以整体额外空间复杂度为 O（3 * n + m）。
+
+```java
+class Solution {
+    public int ladderLength(String beginWord, String endWord, List<String> wordList) {
+        Set<String> wordSet = new HashSet<>(wordList);
+        if(!wordSet.contains(endWord)) {
+            return 0;
+        }
+
+        // 防止重复循环
+        wordSet.remove(beginWord);
+
+        // 使用2个哈希表, 实现双向BFS, 此时有元素重合, 或者任意一个到尽头即最小
+        Set<String> beginVis = new HashSet<>();
+        beginVis.add(beginWord);
+
+        Set<String> endVis = new HashSet<>();
+        endVis.add(endWord);
+
+        Set<String> allVis = new HashSet<>();
+        allVis.add(beginWord);
+        allVis.add(endWord);
+
+        // 开始双向BFS
+        int step = 1;
+        Set<String> tmp, nextLevelVis;
+        while(!beginVis.isEmpty() && !endVis.isEmpty()) {
+            // 优先对数量小的集合进行BFS
+            if(beginVis.size() > endVis.size()) {
+                tmp = beginVis;
+                beginVis = endVis;
+                endVis = tmp;
+            }
+
+            // 遍历当前层的所有节点
+            nextLevelVis = new HashSet<>();
+            for(String curWord : beginVis) {
+                // 枚举+判断从curWord节点, 进行bfs是否达到终止条件
+                if(isVaild(wordSet, allVis, nextLevelVis, endVis, curWord, endWord)) {
+                    return step + 1;
+                }
+            }
+            
+            // 如果当前层遍历完毕, 还没达到终止条件, 则进入下一层
+            beginVis = nextLevelVis;
+            step++;
+        }
+
+        // 实在找不到, 则返回0
+        return 0;
+    }
+
+    // 枚举+判断从curWord节点, 进行bfs是否达到终止条件
+    private boolean isVaild(Set<String> wordSet, Set<String> allVis,
+                            Set<String> nextLevelVis, Set<String> endVis, 
+                            String curWord, String endWord) {
+        // 长度不同, 则必不能转
+        int curLen = curWord.length(), endLen = endWord.length();
+        if(curLen != endLen) {
+            return false;
+        }
+        
+        // 每次需要判断endWord长度
+        char bakChar;
+        String nextWord;
+        char[] curChars = curWord.toCharArray();
+        for(int i = 0; i < endLen; i++) {
+            // 先备份当前第i个字符
+            bakChar = curChars[i];
+        
+            // 枚举a~z一共26个字符
+            for(char j = 'a'; j <= 'z'; j++) {
+                // 如果字符相同, 则无需替换
+                if(j == bakChar) {
+                    continue;
+                }
+
+                // 尝试替换掉第i个字符为j字符
+                curChars[i] = j;
+                nextWord = new String(curChars);
+
+                // 判断是否在单词列表中
+                if(wordSet.contains(nextWord)) {
+                    // 判断是否达到终止条件
+                    if(endVis.contains(nextWord)) {
+                        return true;
+                    }
+
+                    // 没达到终止条件, 但在单词列表中, 则把它加入到下一层
+                    if(!allVis.contains(nextWord)) {
+                        nextLevelVis.add(nextWord);
+                        allVis.add(nextWord);
+                    }
+                }
+                
+                // 当前j字符替换后, 如果没达到终止条件, 则无需恢复那么快, 继续尝试即可
+            }
+
+            // 枚举完毕都没达到终止条件, 则恢复
+            curChars[i] = bakChar;
+        }
+
+        // endWord上每个位置的字符、a~z每个字符都尝试过, 依然没达到终止条件, 则返回false
+        return false;
+    }
+}
+```
 
 #### 2258. 第 77 双周赛 - 逃离火灾 | hard
 

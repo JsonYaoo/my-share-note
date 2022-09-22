@@ -1071,7 +1071,11 @@ Removed symlink /etc/systemd/system/dbus-org.fedoraproject.FirewallD1.service.
 
 快速跳到文本第一行
 
-#### 13）临时文件 .swp
+#### 13）命令行模式 + $
+
+快速定位到当前行的末尾
+
+#### 14）临时文件 .swp
 
 1. vi + recover，或者 vi -r 恢复上次未保存的内容。
 2. vi + 回车，丢弃上次未保存的内容。
